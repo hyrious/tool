@@ -1,0 +1,32 @@
+@import 'https://cdnjs.cloudflare.com/ajax/libs/modern-normalize/0.6.0/modern-normalize.min.css';
+
+body {
+    background-color: var(--back);
+    color: var(--front);
+    transition: background-color 2s, color 1s;
+}
+
+input {
+    background-color: var(--back);
+    color: var(--front);
+    border: 0;
+    border-bottom: .1em solid var(--front);
+    outline: none;
+}
+
+section {
+    max-width: 90%;
+    margin: 0 auto;
+    padding: 10px 0;
+}
+
+a {
+    color: var(--link);
+}
+
+.title {
+    font-family: monospace;
+    max-width: 90%;
+    margin: 0 auto;
+    padding: 40px 0 20px;
+}

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Dup - Decoder</title>
+    <script>
+        var alpha = Array(26).fill().map((_, i) => String.fromCharCode('a'.charCodeAt(0) + i)).join('');
+
+        function mod(a, b) {
+            while (a < 0) a += b;
+            return a % b;
+        }
+
+        function decode(s) {
+            var t = '', j = 0;
+            for (var c of s) {
+                var i = alpha.indexOf(c.toLowerCase());
+                if (i === -1) t += c;
+                else {
+                    i = mod(i - j, alpha.length);
+                    t += alpha[i]; j++;
+                }
+            }
+            return t;
+        }
+
+        function encode(s) {
+            var t = '', j = 0;
+            for (var c of s) {
+                var i = alpha.indexOf(c.toLowerCase());
+                if (i === -1) t += c;
+                else {
+                    i = mod(i + j, alpha.length);
+                    t += alpha[i]; j++;
+                }
+            }
+            return t;
+        }
+    </script>
+    <style>
+        .content {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-gap: 8px;
+            align-items: center;
+            font-family: monospace;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Dup - Decoder</h1>
+    <section class="content">
+        <label for="mess">密文</label>
+        <input id="mess" value="mfk tmft" spellcheck="false" autofocus="true">
+        <label for="real">原文</label>
+        <input id="real" value="mei qian" spellcheck="false">
+    </section>
+    <script>
+        var mess = document.getElementById('mess');
+        var real = document.getElementById('real');
+        mess.oninput = function () {
+            real.value = decode(mess.value);
+        };
+        real.oninput = function () {
+            mess.value = encode(real.value);
+        };
+    </script>
+</body>
+</html>
