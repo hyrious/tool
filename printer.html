@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>ASCII Printer</title>
+    <style>
+        .content {
+            font-family: monospace;
+            font-size: 18px;
+        }
+        .row {
+            display: flex;
+            align-items: center;
+            margin-bottom: .25em;
+        }
+        .row input {
+            flex: 1;
+            margin-left: .5em;
+        }
+        canvas {
+            border: 1px solid var(--control);
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">ASCII Printer</h1>
+    <section class="content">
+        <div class="row">
+            <label for="string">ASCII&nbsp;C 字符串</label>
+            <input id="string" value="Y\b=" spellcheck="false" autofocus="true">
+        </div>
+        <div class="row">
+            <label for="font">字体</label>
+            <input id="font" value="monospace" spellcheck="false" autofocus="true">
+        </div>
+        <div class="row">
+            <canvas></canvas>
+        </div>
+    </section>
+    <script>
+        var canvas = document.querySelector('canvas'), ctx = canvas.getContext('2d');
+        var input = document.querySelector('#string');
+        var font = document.querySelector('#font');
+        font.oninput = input.oninput = function refresh() {
+            const color = window.getComputedStyle(document.body).color;
+            let x = 10, y = 30, string;
+            try {
+                string = JSON.parse('"' + input.value + '"');
+            } catch (e) {
+                string = String(e);
+            }
+            function calcLineWidth(line) {
+                let x = 0, w = 0;
+                for (const char of Array.from(line)) {
+                    const code = char.charCodeAt(0);
+                    if (32 <= code && code <= 126) x += 1;
+                    if (char === '\b') x -= 1;
+                    if (char === '\t') x = ~~((x - 1) / 8) + 1;
+                    w = Math.max(w, x);
+                }
+                return w;
+            }
+            const lines = string.split('\n');
+            canvas.width = 20 + 12 * Math.max(...lines.map(calcLineWidth));
+            canvas.height = 24 + 20 * lines.length;
+            ctx.font = '20px ' + (font.value || 'monospace');
+            ctx.fillStyle = color;
+            for (const char of Array.from(string)) {
+                const code = char.charCodeAt(0);
+                if (char === ' ') {
+                    ctx.clearRect(x, y - 20, 12, 21);
+                    x += 12;
+                }
+                if (32 < code && code <= 126) {
+                    ctx.fillText(char, x, y, 20);
+                    x += 12;
+                }
+                if (char === '\n') y += 20;
+                if (char === '\b') x -= 12;
+                if (char === '\r') x = 10;
+                if (char === '\t') x = (~~((x - 1) / 96) + 1) * 12;
+            }
+        };
+        input.oninput();
+    </script>
+</body>
+</html>
