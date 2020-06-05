@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Compress IPv6</title>
+    <style>
+        .content {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-gap: 8px;
+            align-items: center;
+            font-family: monospace;
+            font-size: 18px;
+        }
+    </style>
+    <script>
+        function compress(ipv6) {
+            ipv6 = ipv6.split(':').map(hex => hex.replace(/^0+/, ''));
+            let sections = [], index = -1, long = 0, longestIndex = -1, isZero = false;
+            for (const str of ipv6) {
+                if (str) {
+                    sections.push(str);
+                    index++;
+                    isZero = false;
+                } else if (isZero) {
+                    sections[index]++;
+                    if (long < sections[index]) {
+                        long = sections[index];
+                        longestIndex = index;
+                    }
+                } else {
+                    sections.push(1);
+                    index++;
+                    isZero = true;
+                }
+            }
+            sections = sections.map(function(value, i) {
+                if (i === longestIndex) return '';
+                if (typeof value === 'string') return value;
+                return Array(value).fill('0').join(':');
+            });
+            if (sections[0] === '') sections.unshift('');
+            if (sections[sections.length - 1] === '') sections.push('');
+            return sections.join(':');
+        }
+    </script>
+</head>
+<body>
+    <h1 class="title">Compress IPv6</h1>
+    <section class="content">
+        <label for="orig">Origin</label>
+        <input id="orig" value="0000:0000:0000:0000:0000:0000:0000:0001" spellcheck="false" autofocus="true">
+        <label for="rslt">Result</label>
+        <input id="rslt" spellcheck="false" readonly>
+    </section>
+    <script>
+        var orig = document.getElementById('orig');
+        var rslt = document.getElementById('rslt');
+        orig.oninput = function() {
+            try {
+                rslt.value = compress(orig.value);
+            } catch (e) {
+                rslt.value = e;
+            }
+        };
+        orig.oninput();
+    </script>
+</body>
+</html>
