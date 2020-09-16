@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-cn" style="height:100%">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://cdn.jsdelivr.net/gh/jnordberg/gif.js@master/dist/gif.js"></script>
+  <title>抖抖图生成器</title>
+</head>
+<body style="display:flex;align-items:center;justify-content:center;margin:0;height:100%;background:#222">
+  <div id="progress" style="position:absolute;top:0;left:0;width:0%;height:2px;background:#add8e6;transition:opacity 1s"></div>
+  <img src="" id="output">
+  <canvas id="canvas" style="display:none"></canvas>
+  <pre style="color:white;white-space:pre-wrap;display:none">地址栏参数说明:
+    text:    要抖动的文字
+    size:    字体大小 (px), 默认 40
+    font:    字体, 默认 sans-serif
+    delay:   刷新间隔 (ms), 默认 50
+    amp:     振幅 (px), 默认 3
+    padding: 边距 (px), 默认 10
+    n:       帧数, 默认 5
+示例:
+    <a style="color:#add8e6" href="#" onclick="location.search=this.textContent">?text=(° ∀。)阿巴阿巴</a>
+    <a style="color:#add8e6" href="#" onclick="location.search=this.textContent">?text=哼哼啊啊啊啊啊啊&size=40&font=sans-serif&delay=50&amp=3&padding=10</a></pre>
+  <script>
+    (function() {
+      'use strict';
+
+      function rand(from, to) {
+        return Math.random() * (to - from) + from;
+      }
+
+      var option = Object.fromEntries(Array.from(new URLSearchParams(location.search)));
+      var output = document.querySelector('#output');
+
+      if (!option.text) {
+        document.querySelector('pre').style.display = 'block';
+        return;
+      }
+
+      var text    = option.text;
+      var size    = Number(option.size)    || 40;
+      var font    = option.font            || 'sans-serif';
+      var delay   = Number(option.delay)   || 50;
+      var amp     = Number(option.amp)     || 3;
+      var padding = Number(option.padding) || 10;
+      var n       = Number(option.n)       || 5;
+
+      var canvas = document.createElement('canvas');
+      var context = canvas.getContext('2d');
+      context.font = size + 'px ' + font;
+
+      canvas.width = context.measureText(text).width + padding * 2;
+      canvas.height = size + padding * 2;
+
+      var gif = new GIF({
+        width: canvas.width,
+        height: canvas.height
+      });
+
+      var progress = document.querySelector('#progress');
+      gif.on('progress', function(percent) {
+        progress.style.width = Math.round(percent * 100) + '%';
+        if (percent === 1) progress.style.opacity = 0;
+      });
+
+      gif.on('finished', function(blob) {
+        output.src = URL.createObjectURL(blob);
+      });
+
+      context.textBaseline = 'middle';
+      context.font = size + 'px ' + font;
+      for (var i = 0; i < n; ++i) {
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.fillStyle = '#000';
+        var x = padding, y = padding + size / 2;
+        for (var c of text) {
+          context.fillText(c, x + rand(-amp, amp), y + rand(-amp, amp));
+          x += context.measureText(c).width;
+        }
+        gif.addFrame(canvas, { copy: true, delay: delay });
+      }
+
+      gif.render();
+    })();
+  </script>
+</body>
+</html>
