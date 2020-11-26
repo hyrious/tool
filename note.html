@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Simple Notebook</title>
+    <style>
+        html, body {
+            height: 100%;
+        }
+        textarea {
+            display: block;
+            padding: .5rem;
+            width: 100%;
+            height: 100%;
+            caret-color: var(--front);
+            color: var(--front);
+            outline: 0;
+            border: 0;
+            background-color: transparent;
+            resize: none;
+            font-family: monospace;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <textarea id="t" autofocus></textarea>
+    <script>
+        function notifyChange() {
+            const firstline = t.value.trim().split("\n", 2)[0] ?? '';
+            const maybetitle = firstline.trim();
+            if (maybetitle) document.title = maybetitle;
+            else document.title = "Simple Notebook";
+        }
+        t.value = localStorage.getItem('tool.note') ?? '';
+        t.oninput = function oninput() {
+            localStorage.setItem('tool.note', t.value);
+            notifyChange();
+        }
+        t.onkeydown = function onkeydown(e) {
+            if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
+                document.title = 'Saved.';
+                e.preventDefault();
+            }
+            if (e.code === 'Tab') {
+                const start = t.selectionStart;
+                const end = t.selectionEnd;
+                t.value = t.value.substring(0, start) + '    ' + t.value.substring(end);
+                t.selectionStart = t.selectionEnd = start + 4;
+                e.preventDefault();
+            }
+        }
+    </script>
+</body>
+</html>
