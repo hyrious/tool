@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Invert Image</title>
+    <style>
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .hidden {
+            display: none;
+        }
+        .invert {
+            filter: invert(1);
+        }
+        .scroll {
+            overflow: auto;
+        }
+    </style>
+</head>
+<body>
+    <img src="">
+    <span>Drag & Drop a Image here.</span>
+    <script>
+        Object.assign(document.body, {
+            ondragover(e) {
+                e.preventDefault()
+            },
+            ondrop(e) {
+                e.preventDefault()
+                const file = e.dataTransfer.files[0]
+                if (file) {
+                    html = document.documentElement
+                    const img = document.querySelector('img')
+                    const span = document.querySelector('span')
+                    const reader = new FileReader()
+                    reader.onload = (r) => {
+                        img.onerror = () => {
+                            span.textContent = 'not valid image file'
+                            span.classList.remove('hidden')
+                            img.onerror = null
+                            img.src = ''
+                        }
+                        img.onload = () => {
+                            span.classList.add('hidden')
+                            span.textContent = ''
+                            img.classList.add('invert')
+                            html.classList.add('scroll')
+                        }
+                        img.src = r.target.result
+                    }
+                    reader.readAsDataURL(file)
+                }
+            }
+        })
+    </script>
+</body>
+</html>
