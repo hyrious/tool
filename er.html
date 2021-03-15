@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Lao Bei Jing Er</title>
+    <style>
+        .content {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-gap: 8px;
+            align-items: center;
+            font-family: monospace;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">老儿北儿京儿</h1>
+    <section class="content">
+        <label for="orig">普通话</label>
+        <input id="orig" spellcheck="false" autofocus="true" oninput="update()">
+        <label for="erer">北京话</label>
+        <input id="erer" spellcheck="false">
+    </section>
+    <script>
+        let orig = document.querySelector('#orig')
+        let erer = document.querySelector('#erer')
+        function update() {
+            erer.value = Array.from(orig.value).map(e => {
+                if ("，。？！；：‘’“”,.?!;:'\"".includes(e)) {
+                    return e
+                } else {
+                    return e + '儿'
+                }
+            }).join('').replace(/儿+/g, '儿')
+        }
+    </script>
+</body>
+</html>
