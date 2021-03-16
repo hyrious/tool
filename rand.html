@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>随机数</title>
+    <style>
+        .content {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-gap: 8px;
+            align-items: center;
+            font-family: monospace;
+            font-size: 18px;
+        }
+        button {
+            color: var(--front);
+            background-color: transparent;
+            border: 2px solid var(--front);
+            border-radius: 3px;
+        }
+        #output {
+            padding-left: 2px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">随机数</h1>
+    <section class="content">
+        <label for="min">最小</label><input id="min" onchange="update(this)" type="number" step="1" value="1">
+        <label for="max">最大</label><input id="max" onchange="update(this)" type="number" value="6">
+        <button onclick="rand()">扔</button><samp id="output"></samp>
+    </section>
+    <script>
+        let range = { min: 1, max: 6 }
+        function update(input) {
+            range[input.id] = input.valueAsNumber
+        }
+        function rand() {
+            let { min, max } = range
+            document.querySelector('#output').textContent = ~~(Math.random() * (max - min + 1)) + min
+        }
+    </script>
+</body>
+</html>
