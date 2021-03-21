@@ -16,9 +16,12 @@
             grid-template-columns: repeat(2, 1fr);
             align-items: stretch;
         }
-        #app > button {
+        #app > aside {
             position: absolute;
             top: .5em; right: .5em;
+        }
+        #app > aside > button {
+            margin-left: .5em;
         }
         #app > textarea {
             padding: .5em;
@@ -36,10 +39,14 @@
         <textarea v-model="markdown"></textarea>
         <textarea v-model="result" readonly v-show="showSource"></textarea>
         <div v-show="!showSource" v-html="result" class="markdown-body"></div>
-        <button @click="showSource = !showSource">switch</button>
+        <aside>
+            <button @click="showSource = !showSource">switch</button>
+            <button @click="usePangu = !usePangu">pangu</button>
+        </aside>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/vue@next/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/remarkable@latest/dist/remarkable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pangu@latest/dist/browser/pangu.min.js"></script>
     <script>
         const { Remarkable } = remarkable
         const { createApp, ref, computed } = Vue
@@ -47,9 +54,13 @@
         createApp({
             setup() {
                 let showSource = ref(true)
+                let usePangu = ref(false)
                 let markdown = ref("# hello world!")
-                let result = computed(() => md.render(markdown.value))
-                return { showSource, markdown, result }
+                let result = computed(() => md.render(
+                    usePangu.value ? pangu.spacing(markdown.value)
+                                   : markdown.value
+                ))
+                return { showSource, usePangu, markdown, result }
             }
         }).mount('#app')
     </script>
