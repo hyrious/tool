@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="color-scheme" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Markdown</title>
+    <style>
+        [v-cloak] { display: none }
+        #app {
+            height: 100vh;
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            align-items: stretch;
+        }
+        #app > button {
+            position: absolute;
+            top: .5em; right: .5em;
+        }
+        #app > textarea {
+            padding: .5em;
+            font-family: monospace;
+            resize: none;
+        }
+        #app > .markdown-body {
+            padding: .5em;
+        }
+    </style>
+    <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/hyrious/github-markdown-css@main/github-markdown.css">
+</head>
+<body>
+    <div id="app" v-cloak>
+        <textarea v-model="markdown"></textarea>
+        <textarea v-model="result" readonly v-show="showSource"></textarea>
+        <div v-show="!showSource" v-html="result" class="markdown-body"></div>
+        <button @click="showSource = !showSource">switch</button>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/vue@next/dist/vue.global.prod.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/remarkable@latest/dist/remarkable.min.js"></script>
+    <script>
+        const { Remarkable } = remarkable
+        const { createApp, ref, computed } = Vue
+        const md = new Remarkable()
+        createApp({
+            setup() {
+                let showSource = ref(true)
+                let markdown = ref("# hello world!")
+                let result = computed(() => md.render(markdown.value))
+                return { showSource, markdown, result }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
