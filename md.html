@@ -38,7 +38,7 @@
     <div id="app" v-cloak>
         <textarea v-model="markdown"></textarea>
         <textarea v-model="result" readonly v-show="showSource"></textarea>
-        <div v-show="!showSource" v-html="result" class="markdown-body"></div>
+        <div v-show="!showSource" v-html="result" class="markdown-body" style="display: none;"></div>
         <aside>
             <button @click="showSource = !showSource">switch</button>
             <button @click="usePangu = !usePangu">pangu</button>

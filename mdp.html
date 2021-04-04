@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
+  <title>Markdown Preview</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/hyrious/github-markdown-css@main/github-markdown.css">
+  <script src="favicon.js"></script>
+  <style>
+    .markdown-body {
+      max-width: 72ch;
+      margin: 0 auto;
+      padding: 1ch;
+    }
+    [data-prefix]::before {
+      content: attr(data-prefix);
+    }
+    .flex {
+      display: flex;
+      align-items: stretch;
+    }
+    .flex input {
+      flex-grow: 1;
+      margin-right: .5em;
+    }
+    .flex button {
+      min-width: 10%;
+    }
+  </style>
+</head>
+<body class="markdown-body">
+  <h2>Usage</h2>
+  <p>Serve your markdown file with the help of <a href="https://github.com/lukeed/sirv/tree/master/packages/sirv-cli">sirv-cli</a>. &darr;</p>
+  <pre><code data-prefix="$ ">npx sirv-cli --dev --cors --port 4000</code></pre>
+  <p class="flex">
+    <input id="file-url" value="http://localhost:4000/README.md">
+    <button onclick="go()">GO</button>
+  </p>
+  <script src="https://cdn.jsdelivr.net/npm/shiki@0.9.3/dist/index.jsdelivr.iife.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/remarkable@2.0.1/dist/remarkable.min.js"></script>
+  <script>
+    const accept = new Set('abap,actionscript-3,ada,apex,applescript,asm,asp-net-razor,awk,bat,c,clojure,cobol,coffee,cpp.embedded.macro,cpp,crystal,csharp,css,d,dart,diff,dockerfile,elixir,elm,erlang,fsharp,git-commit,git-rebase,gnuplot,go,graphql,groovy,hack,haml,handlebars,haskell,hcl,hlsl,html-ruby-erb,html,ini,java,javascript,jinja-html,json,jsonc,jsonnet,jsx,julia,kotlin,latex,less,lisp,logo,lua,makefile,markdown,matlab,mdx,nix,objective-c,ocaml,pascal,perl,perl6,php,pls,postcss,powershell,prolog,pug,puppet,purescript,python,r,razor,ruby,rust,sas,sass,scala,scheme,scss,shaderlab,shellscript,smalltalk,sql,ssh-config,stylus,swift,tcl,toml,ts,tsx,typescript,vb,viml,vue,wasm,xml,xsl,yaml,文言'.split(','));
+    const { Remarkable, linkify } = remarkable;
+
+    const theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'github-dark' : 'github-light';
+    let highlighter;
+    shiki.getHighlighter({ theme }).then(e => {
+      highlighter = e;
+    });
+
+    async function go() {
+      const url = document.querySelector('#file-url').value;
+
+      const task = async () => {
+
+        try {
+          const text = await fetch(url).then(r => r.text())
+          const match = text.match(/```(\w+)/g);
+          const langs = match == null ? [] : match.map(e => e.substring(3)).filter(e => accept.has(e));
+          
+          const md = new Remarkable('full', {
+            html: true,
+            highlight(str, lang) {
+              if (!highlighter) return '';
+              try {
+                let code = highlighter.codeToHtml(str, lang);
+                code = code.replace(/^<pre class="shiki"[^>]*><code>/, '');
+                code = code.replace(/<\/code><\/pre>$/, '');
+                return code;
+              } catch {
+                return '';
+              }
+            }
+          });
+          const template = document.createElement('template')
+          template.innerHTML = md.render(text)
+          Array.from(document.body.children)
+            .filter(e => e.tagName.toLowerCase() !== 'script')
+            .forEach(e => e.remove());
+          document.body.append(template.content);
+        } catch(e) {
+          console.debug(e)
+          window.alert('failed to fetch ' + url);
+        }
+
+        setTimeout(task, 1000);
+      };
+
+      await task();
+    }
+  </script>
+</body>
+</html>
