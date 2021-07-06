@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="color-scheme" content="light dark">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Count Down</title>
+    <style>
+        #output {
+            display: inline-block;
+            padding: 12px 0;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">倒计时</h1>
+    <section class="content">
+        <div>
+            <select id="hour"></select> <label for="hour">时</label>
+            <select id="minute"></select> <label for="minute">分</label>
+            <select id="second"></select> <label for="second">秒</label>
+            <button id="start">开始</button>
+            <button id="reset" style="display: none;">重置</button>
+        </div>
+        <samp id="output"></samp>
+    </section>
+    <script>
+        const $ = s => document.getElementById(s)
+        const a = e => (...c) => (e.append(...c), e)
+        const h = t => a(document.createElement(t))
+        const map = n => f => Array(n).fill(0).map((e, i) => f(i))
+        const raf = requestAnimationFrame
+        const caf = cancelAnimationFrame
+        const now = () => performance.now()
+        const van = e => +e.value
+        const dgt = n => ('' + n).padStart(2, '0')
+
+        $('hour').append(...map(24)(i => h('option')(i)))
+        $('minute').append(...map(60)(i => h('option')(i)))
+        $('second').append(...map(60)(i => h('option')(i)))
+
+        let started = false, paused = true
+        let start = 0, target = 0
+        let handler
+        function update() {
+            let rest = start + target - now();
+            if (!(rest > 0)) return $('reset').click();
+            !paused && (handler = raf(update));
+            let hour = (rest / (60 * 60 * 1000)) | 0
+            let minute = ((rest / (60 * 1000)) % 60) | 0
+            let second = ((rest / 1000) % 60) | 0
+            let msec = Math.max(0, (rest % 1000) | 0)
+            $('output').textContent = `${dgt(hour)}:${dgt(minute)}:${dgt(second)}.${msec}`;
+        }
+
+        $('start').onclick = function toggle() {
+            paused = !paused
+            $('start').textContent = paused ? '重新开始' : '停下'
+            if (!started) {
+                started = true
+                start = now()
+                target = (van($('hour')) * 60 * 60 + van($('minute')) * 60 + van($('second'))) * 1000
+                $('reset').style.display = ''
+            }
+            if (!paused) handler = raf(update);
+        }
+
+        $('reset').onclick = function reset() {
+            caf(handler)
+            paused = true
+            started = false
+            start = target = 0
+            $('output').textContent = ''
+            $('reset').style.display = 'none'
+            $('start').textContent = '开始'
+        }
+    </script>
+</body>
+</html>
