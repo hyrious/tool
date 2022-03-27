@@ -39,7 +39,9 @@
   }
   function updateTheme(e) {
     const root = document.documentElement;
-    for (const [k, v] of Object.entries(theme[e.matches ? "dark" : "light"])) {
+    const key = e.matches ? "dark" : "light";
+    root.style.colorScheme = key;
+    for (const [k, v] of Object.entries(theme[key])) {
       if (v.startsWith('rgba(')) {
         const m = v.match(/rgba\((\w+),(.+)\)/);
         root.style.setProperty(`--${k}`, `rgba(${rgb(colors[m[1]])},${m[2]})`);

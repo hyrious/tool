@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>运行代码</title>
+    <style>
+        textarea, button {
+            color: var(--front);
+            border-color: var(--control);
+            background-color: var(--back);
+        }
+        textarea {
+            padding: .5em;
+            font-family: monospace;
+            resize: none;
+        }
+        button {
+            padding: .25em;
+            border: 2px solid var(--control);
+            border-radius: 3px;
+        }
+        button:active, button.active {
+            border-color: var(--front);
+            background-color: var(--control);
+        }
+        form, output {
+            display: block;
+            max-width: 90%;
+            margin: 0 auto;
+        }
+        form {
+            display: flex;
+            flex-flow: column nowrap;
+            gap: 8px;
+        }
+        output {
+            margin-top: 8px;
+            border: 1px solid var(--control);
+            padding: .5em;
+            font-family: monospace;
+        }
+        textarea, button, output {
+            font-size: 16px;
+        }
+        iframe {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">运行代码</h1>
+    <form id="form" onsubmit="return run(this), false">
+        <textarea name="code" id="code" rows="20" placeholder="import { parse } from 'https://esm.sh/@babel/core'"></textarea>
+        <button id="run">Run <kbd>(ctrl+b)</kbd></button>
+    </form>
+    <output id="output">// console.log(__will_be_transfered_here__)</output>
+    <iframe id="iframe" src="about:blank" title="sandbox" frameborder="0" sandbox="allow-scripts"></iframe>
+    <script>
+        const $form = document.querySelector('#form')
+        const $button = document.querySelector('#run')
+        const $output = document.querySelector('#output')
+        const $iframe = document.querySelector('#iframe')
+        $iframe.srcdoc = `<!DOCTYPE html><title>sandbox</title><script>
+            onmessage = ({ data }) => {
+                data = "console.log = (() => { let _log = console.log; function log(...args) { _log.apply(this, args); parent.postMessage(args.join(' '), '*') }; log._log = _log; return log })(); " + data
+                data = 'data:text/javascript;charset=utf-8,' + Math.random() + ';' + encodeURIComponent(data)
+                import(data).catch(error => parent.postMessage(String(error), '*')).then(() => {
+                    console.log._log && (console.log = console.log._log)
+                })
+            }
+        </scr` + 'ipt>'
+        addEventListener('message', ({ data, source }) => {
+            if (source === $iframe.contentWindow) {
+                $output.textContent += data + '\n'
+            }
+        })
+        document.addEventListener('keydown', ev => {
+            if (ev.key === 'b' && ev.ctrlKey) {
+                $button.classList.add('active')
+            }
+        })
+        document.addEventListener('keyup', ev => {
+            if (ev.key === 'b' && ev.ctrlKey) {
+                $button.classList.remove('active')
+                run($form)
+            }
+        })
+        function run(form) {
+            $output.innerHTML = ''
+            $iframe.contentWindow.postMessage(form.code.value, '*')
+        }
+    </script>
+</body>
+</html>
