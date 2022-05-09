@@ -98,6 +98,7 @@
         app.textContent = `--- ${a}\n+++ ${b}\n`
         for (var i = 0; i < chunks.length; i += 2) {
           var [diff, foldded] = chunks.slice(i, i + 2)
+          if (diff.length === 0) continue
           if (!foldded) continue
           var [index, [_, ln_a, ln_b]] = diff[0]
           var display = lines.slice(index, index + diff.length)
@@ -140,6 +141,7 @@
     }
     function error(err) {
       app.textContent = err.message
+      console.error(err)
     }
     function fail() {
       app.innerHTML =
