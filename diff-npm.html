@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>𝚍𝚒𝚏𝚏 -𝚞 𝚗𝚙𝚖/&hellip;</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: monospace; margin: 8px; line-height: 1.5; }
+    #a, #b { width: 80vw; }
+    #app { white-space: pre; }
+    .hljs { background: none !important; }
+  </style>
+</head>
+<body>
+  <div id="app">Loading&hellip;</div>
+  <div id="diff"></div>
+  <script>
+    String.prototype.at ||= function (index) {
+      return this[index < 0 ? this.length + index : index]
+    }
+    Array.prototype.at ||= function (index) {
+      return this[index < 0 ? this.length + index : index]
+    }
+    var $ = document.querySelector.bind(document)
+    var app = $('#app')
+    var timer = setInterval(() => {
+      app.textContent += app.textContent.at(-1)
+    }, 1000)
+  </script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.17/bundles/css/diff2html.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.5.1/build/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.17/bundles/js/diff2html-ui-slim.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/google/diff-match-patch/javascript/diff_match_patch.js"></script>
+  <script>
+    clearInterval(timer)
+    work(Object.fromEntries(new URLSearchParams(location.search))).catch(error)
+    async function work(search) {
+      if (!('a' in search && 'b' in search)) return fail();
+      var { a, b } = search
+      if (!a || !b) return fail();
+      app.textContent = `resolving ${a}, ${b} ...`
+      var fetch_a = fetch(`https://cdn.jsdelivr.net/npm/${a}`)
+      var fetch_b = fetch(`https://cdn.jsdelivr.net/npm/${b}`)
+      var text_a = await go(fetch_a)
+      var text_b = await go(fetch_b)
+
+      var dmp = new diff_match_patch()
+      var info = dmp.diff_linesToChars_(text_a, text_b)
+      var diffs = dmp.diff_main(info.chars1, info.chars2, false)
+      dmp.diff_charsToLines_(diffs, info.lineArray)
+
+      app.textContent = ''
+      var prefix = { [-1]: '-', 0: ' ', 1: '+' }
+      for (var diff of diffs) {
+        app.appendChild(document.createTextNode(map(prefix[diff[0]], diff[1])))
+      }
+      // Now we got app.textContent = `+xxx\n-yyy\n not change`,
+      // we are going to convert that to unified diff format.
+
+      var lines = app.textContent.split('\n')
+      var i = 0, m = 0, n = 0
+      var line_numbers = []
+      for (var line of lines) {
+        if (line[0] === ' ') {
+          m++, n++
+        } else if (line[0] === '+') {
+          n++
+        } else if (line[0] === '-') {
+          m++
+        }
+        line_numbers[i] = [line[0], m, n]
+        i++
+      }
+
+      // s = fold unchanged lines
+      if (search.s) {
+        for (i = 0; i < line_numbers.length; ++i) {
+          if (line_numbers[i][0] === ' ') {
+            var foldable = [i - 1, i - 2, i - 3, i + 1, i + 2, i + 3].every(j => {
+              if (j < 0 || j >= line_numbers.length) return true;
+              return line_numbers[j][0] === ' '
+            })
+            if (foldable) line_numbers[i][3] = 1
+          }
+        }
+        var chunks = [], chunk = [], sign = false
+        chunks.push(chunk)
+        for (i = 0; i < line_numbers.length; ++i) {
+          var line = line_numbers[i]
+          if (sign !== Boolean(line[3])) {
+            sign = Boolean(line[3])
+            chunks.push([])
+          }
+          chunks.at(-1).push([i, line])
+        }
+        app.textContent = `--- ${a}\n+++ ${b}\n`
+        for (var i = 0; i < chunks.length; i += 2) {
+          var [diff, foldded] = chunks.slice(i, i + 2)
+          if (!foldded) continue
+          var [index, [_, ln_a, ln_b]] = diff[0]
+          var display = lines.slice(index, index + diff.length)
+          var p = 0, q = 0
+          for (var d_line of display) {
+            var d = d_line[0]
+            if (d === ' ') p++, q++;
+            if (d === '+') q++;
+            if (d === '-') p++;
+          }
+          app.appendChild(document.createTextNode(`@@ -${ln_a},${p} +${ln_b},${q} @@\n${display.join('\n')}\n`))
+        }
+      } else {
+        // Don't fold, we only has to answer how many '-' and '+'
+        app.insertBefore(document.createTextNode(`--- ${a}\n+++ ${b}\n@@ -1,${m} +1,${n} @@\n`), app.firstChild)
+      }
+
+      app.style.display = 'none'
+      var ui = new Diff2HtmlUI($('#diff'), app.textContent, {
+        drawFileList: false,
+        outputFormat: search.f === 's' ? 'side-by-side' : 'line-by-line',
+      })
+      ui.draw()
+      ui.highlightCode()
+    }
+    function map(prefix, text) {
+      var arr = text.split('\n').map(e => prefix + e)
+      if (text.at(-1) === '\n') {
+        arr.pop()
+        return arr.join('\n') + '\n'
+      } else {
+        return arr.join('\n')
+      }
+    }
+    async function go(promise) {
+      let r = await promise
+      let t = await r.text()
+      if (!r.ok) throw new Error(t)
+      return t
+    }
+    function error(err) {
+      app.textContent = err.message
+    }
+    function fail() {
+      app.innerHTML =
+        'Usage: diff.html?a=<ins>pkg1/file.js</ins>&b=<ins>pkg2/file.js</ins>&s=1&f=l\n' +
+        'a: <input id="a" placeholder=@types/react@17/index.d.ts>\n' +
+        'b: <input id="b" placeholder=@types/react@18/index.d.ts>\n' +
+        '<button id="btn">submit</button>\n' +
+        's: simplify (fold) unchanged lines\n' +
+        'f: l = line by line (default), s = side by side'
+      $('#btn').onclick = () => {
+        location.search = '?' + new URLSearchParams({ a: $('#a').value, b: $('#b').value, s: 1 })
+      }
+    }
+  </script>
+</body>
+</html>
