@@ -53,7 +53,7 @@
 </head>
 <body>
     <h1 class="title">运行代码</h1>
-    <form id="form" onsubmit="return run(this), false">
+    <form id="form">
         <textarea name="code" id="code" rows="20" placeholder="import { parse } from 'https://esm.sh/@babel/core'"></textarea>
         <button id="run">Run <kbd>(ctrl+b)</kbd></button>
     </form>
@@ -81,17 +81,20 @@
         document.addEventListener('keydown', ev => {
             if (ev.key === 'b' && ev.ctrlKey) {
                 $button.classList.add('active')
+                ev.preventDefault()
             }
         })
         document.addEventListener('keyup', ev => {
             if (ev.key === 'b' && ev.ctrlKey) {
                 $button.classList.remove('active')
-                run($form)
+                $button.click()
+                ev.preventDefault()
             }
         })
-        function run(form) {
+        $button.onclick = function run(ev) {
+            ev.preventDefault()
             $output.innerHTML = ''
-            $iframe.contentWindow.postMessage(form.code.value, '*')
+            $iframe.contentWindow.postMessage($form.code.value, '*')
         }
     </script>
 </body>
