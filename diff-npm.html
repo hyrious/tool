@@ -8,13 +8,32 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: monospace; margin: 8px; line-height: 1.5; }
-    #a, #b { width: 80vw; }
-    #app { white-space: pre; }
+    label { user-select: none; -webkit-user-select: none; }
+    #app { white-space: pre; line-height: 2; }
+    #main { width: 80vw; }
+    #preview { margin: 0; }
+    #form { display: grid; align-items: center; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 4px 0; }
     .hljs { background: none !important; }
   </style>
 </head>
 <body>
   <div id="app">Loading&hellip;</div>
+  <div id="return" style="display: none">
+    <a href="/">Return Home</a>
+  </div>
+  <div id="main" style="display: none">
+    <p id="preview">Usage: diff-npm.html?a=<ins>pkg1/file.js</ins>&b=<ins>pkg2/file.js</ins>&s=<ins>1</ins>&f=<ins>l</ins></p>
+    <div id="form">
+      <label for="a">a: </label><input id="a" placeholder=@types/react@17/index.d.ts>
+      <label for="b">b: </label><input id="b" placeholder=@types/react@18/index.d.ts>
+      <label for="s">s: </label><div><input id="s" type="checkbox" checked><label for="s"> simplify (fold) unchanged lines</label></div>
+      <label for="f">f: </label><div>
+        <input id="fl" type="radio" name="f" checked><label for="fl"> l = line by line (default)</label>
+        <input id="fs" type="radio" name="f"><label for="fs"> s = side by side</label>
+      </div>
+    </div>
+    <button id="btn">submit</button>
+  </div>
   <div id="diff"></div>
   <script>
     String.prototype.at ||= function (index) {
@@ -117,6 +136,8 @@
       }
 
       app.style.display = 'none'
+      $('#return').style.display = ''
+      $('#return a').href = location.pathname
       var ui = new Diff2HtmlUI($('#diff'), app.textContent, {
         drawFileList: false,
         outputFormat: search.f === 's' ? 'side-by-side' : 'line-by-line',
@@ -144,15 +165,21 @@
       console.error(err)
     }
     function fail() {
-      app.innerHTML =
-        'Usage: diff.html?a=<ins>pkg1/file.js</ins>&b=<ins>pkg2/file.js</ins>&s=1&f=l\n' +
-        'a: <input id="a" placeholder=@types/react@17/index.d.ts>\n' +
-        'b: <input id="b" placeholder=@types/react@18/index.d.ts>\n' +
-        '<button id="btn">submit</button>\n' +
-        's: simplify (fold) unchanged lines\n' +
-        'f: l = line by line (default), s = side by side'
+      app.style.display = 'none'
+      $('#main').style.display = ''
+      $('#a').oninput = $('#b').oninput = $('#s').oninput = $('#fl').oninput = $('#fs').oninput = () => {
+        const [a, b, s, f] = $('#preview').querySelectorAll('ins')
+        a.textContent = $('#a').value || $('#a').placeholder
+        b.textContent = $('#b').value || $('#b').placeholder
+        s.textContent = $('#s').checked ? 1 : ''
+        f.textContent = $('#fs').checked ? 's' : ''
+      }
       $('#btn').onclick = () => {
-        location.search = '?' + new URLSearchParams({ a: $('#a').value, b: $('#b').value, s: 1 })
+        location.search = '?' + new URLSearchParams({
+          a: $('#a').value, b: $('#b').value,
+          s: $('#s').checked ? 1 : '',
+          f: $('#fs').checked ? 's' : ''
+        })
       }
     }
   </script>
