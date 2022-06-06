@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bundle.js</title>
+  <style>
+    * { box-sizing: border-box; }
+    #__form__ textarea { font-family: monospace; }
+  </style>
+</head>
+<body>
+  <pre id="__log__"></pre>
+  <div id="app"></div>
+  <div id="__form__">
+    <strong>main.jsx</strong><br>
+    <textarea rows="20" cols="90"></textarea><br>
+    <button>run</button>
+  </div>
+  <script>
+    ;(async () => {
+      "use strict"
+      const $log = document.querySelector('#__log__')
+      const $form = document.querySelector('#__form__')
+
+      let btn = $log.appendChild(document.createElement('button'))
+      $log.appendChild(document.createElement('br'))
+      btn.textContent = 'hide log and input form'
+      btn.onclick = () => {
+        $log.style.display = 'none'
+        $form.style.display = 'none'
+      }
+
+      const log = (text) => $log.appendChild(document.createTextNode(`${text}\n`))
+      const query = Object.fromEntries(new URLSearchParams(location.search))
+
+      $form.querySelector('button').onclick = () => {
+        const text = $form.querySelector('textarea').value
+        const modules = JSON.stringify([['main.jsx', text, 1]])
+        location.search = '?modules=' + encodeURIComponent(modules)
+      }
+
+      if (!query.modules) {
+        return render_help()
+      }
+
+      let modules
+      try {
+        modules = JSON.parse(query.modules)
+        log('modules = [')
+        log('')
+        let title
+        modules.forEach(m => {
+          log(title = `  [${m[2] ? '*' : ' '}] ${m[0]}`)
+          log(`      ` + '-'.repeat(title.length - 6))
+          log(m[1].split('\n').map(line => '      ' + line).join('\n'))
+        })
+        log('')
+        log(']')
+      } catch (error) {
+        log('an error occured on parsing modules ' + query.modules)
+        log(error.stack)
+        throw error
+      }
+
+      let mainJSX = modules.find(m => m[0] === 'main.jsx')
+      if (mainJSX) {
+        $form.querySelector('textarea').value = mainJSX[1]
+      }
+
+      let state = { url: '' }
+      if (!(await load_esbuild(state))) return;
+      const esbuild = window.esbuild
+      log(`downloading esbuild@${esbuild.version}`)
+
+      const wasmURL = state.url.replace('/lib/browser.min.js', '/esbuild.wasm')
+      try {
+        await esbuild.initialize({ wasmURL })
+        await esbuild.transform('let a = 1')
+      } catch (error) {
+        log('an error occured on initializing esbuild with wasmURL = ' + wasmURL)
+        log(error.stack)
+        throw error
+      }
+      log(`loaded esbuild@${esbuild.version}`)
+
+      let cdn_plugin = {
+        name: 'cdn',
+        setup({ onResolve, onLoad }) {
+          const baseUrl = query.prefix || 'https://unpkg.com'
+
+          const fetch_cache = new Map();
+          async function fetch_if_uncached(url) {
+            if (fetch_cache.has(url)) {
+              return fetch_cache.get(url);
+            }
+            await new Promise(r => setTimeout(r, 1000));
+            const promise = fetch(url)
+              .then(async r => {
+                if (r.ok) {
+                  return { url: r.url, body: await r.text() };
+                } else {
+                  throw new Error(await r.text());
+                }
+              })
+              .catch(err => {
+                fetch_cache.delete(url);
+                throw err;
+              });
+            fetch_cache.set(url, promise);
+            return promise;
+          }
+
+          async function follow_redirects(url) {
+            const res = await fetch_if_uncached(url);
+            return res.url;
+          }
+
+          onResolve({ filter: /^https?:/ }, args => {
+            return { path: args.path, external: true };
+          });
+
+          onResolve({ filter: /.*/ }, async args => {
+            const m = modules.find(m => m[0] === args.path)
+            if (m) { return { path: args.resolveDir + args.path, pluginData: m } };
+
+            if (/^[@\w]/.test(args.path)) {
+              log(`resolving ${args.path}`)
+              const hint = `${baseUrl}/${args.path}/package.json`;
+              const pkg_url = await follow_redirects(hint);
+              const pkg_json = (await fetch_if_uncached(pkg_url)).body;
+              const pkg = JSON.parse(pkg_json);
+              if (pkg.module || pkg.main) {
+                const url = pkg_url.replace(/\/package\.json$/, "");
+                const path = new URL(pkg.module || pkg.main, `${url}/`).href;
+                return { path, namespace: "unpkg" };
+              }
+            }
+          })
+
+          onResolve({ filter: /^\./, namespace: "unpkg" }, async args => {
+            const url = new URL(args.path, args.importer).href;
+            log(`resolving ${url}`);
+            const path = await follow_redirects(url);
+            return { path, namespace: "unpkg" };
+          });
+
+          onLoad({ filter: /.*/ }, args => {
+            const m = args.pluginData
+            if (m) return { contents: m[1], loader: 'default' };
+          })
+
+          onLoad({ filter: /.*/, namespace: "unpkg" }, async args => {
+            if (!fetch_cache.has(args.path)) {
+              log(`resolving ${args.path}`);
+            }
+            const { body } = await fetch_if_uncached(args.path);
+            return { contents: body, loader: "default" };
+          });
+        }
+      }
+
+      let result
+      try {
+        result = await esbuild.build({
+          entryPoints: modules.flatMap(m => m[2] ? [m[0]] : []),
+          bundle: true,
+          sourcemap: 'inline',
+          plugins: [cdn_plugin]
+        })
+      } catch (error) {
+        log('an error occured on bundling modules')
+        log(error.stack)
+        throw error
+      }
+
+      if (result.warnings.length) {
+        const texts = await esbuild.formatMessages(result.warnings, { kind: 'warning', color: false })
+        log(texts.map(e => e.trimEnd()).join('\n\n'))
+      }
+
+      if (result.errors.length) {
+        const texts = await esbuild.formatMessages(result.errors, { kind: 'error', color: false })
+        log(texts.map(e => e.trimEnd()).join('\n\n'))
+      }
+
+      const file = result.outputFiles[0]
+      if (!file) return log("No output!");
+      log('-----'.repeat(18))
+      try {
+        Function('console', file.text)({
+          log(...args) {
+            console.log(...args)
+            log(args.join(' '))
+          }
+        })
+      } catch (error) {
+        log('an error occured on evaluating modules')
+        log(error.stack)
+        throw error
+      }
+
+      async function load_esbuild(state) {
+        const urls = [
+          "https://cdn.jsdelivr.net/npm/esbuild-wasm@latest/lib/browser.min.js",
+          "https://unpkg.com/esbuild-wasm@latest/lib/browser.min.js",
+        ]
+        for (const url of urls) {
+          state.url = url
+          try {
+            log(`loading ${url}`)
+            await inject_script(url)
+            break
+          } catch {
+            log(`failed to load ${url}`)
+            continue
+          }
+        }
+        return window.esbuild
+      }
+
+      function inject_script(url) {
+        return new Promise((resolve, reject) => {
+          const el = document.createElement('script')
+          el.onload = resolve
+          el.onerror = reject
+          el.src = url
+          document.head.appendChild(el)
+        })
+      }
+
+      function render_help() {
+        $log.textContent = `Usage: bundle.html?modules=[["main.js","console.log(1)",true]]&prefix=https://unpkg.com
+
+-- source files
+modules :: Array<[filename: string, code: string, is_entry: boolean]>
+
+-- cdn url prefix, for example "https://unpkg.com", "https://esm.sh"
+prefix  :: string
+`
+      }
+    })();
+  </script>
+</body>
+</html>
