@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>HTML Entity</title>
+  <style>
+    .content {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-gap: 8px;
+      align-items: center;
+      font-family: monospace;
+      font-size: 18px;
+    }
+    .data {
+      max-width: 90%;
+      margin: 20px auto;
+      max-height: 300px;
+      overflow: scroll;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Search HTML Entity</h1>
+  <section class="content">
+    <label for="ascii">ASCII</label><input id="ascii" list="ascii-list" value="rarr" autofocus>
+    <label for="unicode">Unicode</label><input id="unicode">
+  </section>
+  <datalist id="ascii-list">
+  </datalist>
+  <pre id="data" class="data">HTML Entity Table
+-----------------------------------</pre>
+  <script>
+    fetch('https://raw.githubusercontent.com/fb55/entities/master/maps/entities.json').then(r => r.json())
+    .then(data => {
+      const $ascii    = document.querySelector('#ascii')
+      const $unicode  = document.querySelector('#unicode')
+      const $list     = document.querySelector('#ascii-list')
+      const $data     = document.querySelector('#data')
+
+      const rev_data  = {}
+      const keys = Object.keys(data)
+      let max = 0
+      keys.forEach(name => { max = max < name.length ? name.length : max })
+      keys.forEach(name => {
+        $list.appendChild(document.createElement('option')).value = name
+        rev_data[data[name]] = name
+        $data.appendChild(document.createTextNode(`\n${name.padEnd(max)} | ${data[name]}`))
+      })
+
+      $ascii.oninput = $unicode.oninput = ev => {
+        if (ev.target === $ascii) {
+          $unicode.value = data[$ascii.value.trim()] || '(not found)'
+        }
+        if (ev.target === $unicode) {
+          $ascii.value = rev_data[$unicode.value.trim()] || '(not found)'
+        }
+      }
+
+      $ascii.dispatchEvent(new InputEvent('input'))
+    })
+  </script>
+</body>
+</html>
