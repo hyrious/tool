@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>GitHub Slugger</title>
+    <style>
+        .content {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            grid-gap: 8px;
+            align-items: center;
+            font-family: monospace;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">GitHub Slugger</h1>
+    <section class="content">
+        <label for="unicode">标题</label>
+        <input id="unicode" value="Hello, world!" spellcheck="false" autofocus="true">
+        <label for="id">ID</label>
+        <input id="id" value="loading..." spellcheck="false" readonly>
+    </section>
+    <script type="module">
+        import { slug } from 'https://esm.sh/github-slugger';
+
+        let unicode = document.getElementById('unicode');
+        let id      = document.getElementById('id');
+
+        unicode.oninput = function update() {
+            id.value = slug(unicode.value);
+        }
+
+        let query = location.search.slice(1);
+        if (query) {
+            unicode.value = decodeURIComponent(query);
+        }
+        unicode.dispatchEvent(new InputEvent('input'));
+    </script>
+</body>
+</html>
