@@ -29,6 +29,7 @@
   <section class="content">
     <label for="ascii">ASCII</label><input id="ascii" list="ascii-list" value="rarr" autofocus>
     <label for="unicode">Unicode</label><input id="unicode">
+    <label for="alt">Alters</label><span id="alt" class="alt"></span>
   </section>
   <datalist id="ascii-list">
   </datalist>
@@ -40,6 +41,7 @@
       const $ascii    = document.querySelector('#ascii')
       const $unicode  = document.querySelector('#unicode')
       const $list     = document.querySelector('#ascii-list')
+      const $alt      = document.querySelector('#alt')
       const $data     = document.querySelector('#data')
 
       const rev_data  = {}
@@ -47,8 +49,8 @@
       let max = 0
       keys.forEach(name => { max = max < name.length ? name.length : max })
       keys.forEach(name => {
-        $list.appendChild(document.createElement('option')).value = name
-        rev_data[data[name]] = name
+        $list.appendChild(document.createElement('option')).value = name;
+        (rev_data[data[name]] ||= []).push(name)
         $data.appendChild(document.createTextNode(`\n${name.padEnd(max)} | ${data[name]}`))
       })
 
@@ -57,8 +59,11 @@
           $unicode.value = data[$ascii.value.trim()] || '(not found)'
         }
         if (ev.target === $unicode) {
-          $ascii.value = rev_data[$unicode.value.trim()] || '(not found)'
+          let ret = rev_data[$unicode.value.trim()]
+          $ascii.value = ret ? ret[0] : '(not found)'
         }
+        let ret = rev_data[$unicode.value.trim()]
+        $alt.textContent = ret ? ret.slice(1).join(', ') : ''
       }
 
       $ascii.dispatchEvent(new InputEvent('input'))
