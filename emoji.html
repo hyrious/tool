@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>GitHub Emoji</title>
+  <style>
+    .content {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      align-items: center;
+      font-family: monospace;
+      font-size: 18px;
+    }
+    label[for="search"] {
+      display: inline-block;
+      font-size: 18px;
+      line-height: 28px;
+      width: 28px;
+      text-align: center;
+    }
+    .result {
+      max-width: 90%;
+      margin: 0 auto 40px;
+      display: grid;
+      grid-template-columns: auto auto auto 1fr;
+      align-items: center;
+      line-height: 28px;
+      font-family: monospace;
+      font-size: 18px;
+    }
+    .emoji {
+      display: inline-block;
+      width: 28px;
+      text-align: center;
+    }
+    .desc {
+      font-family: system-ui;
+      opacity: 0.8;
+    }
+    .aliases, .tags {
+      display: inline-block;
+      font-size: 16px;
+      padding: 2px 1px;
+      padding-right: 20px;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Search GitHub Emoji</h1>
+  <section class="content">
+    <label for="search" title="search">🔍</label>
+    <input id="search" type="search" placeholder="Enter emoji text or unicode symbol" value="nerd">
+  </section>
+  <section id="result" class="result"></section>
+  <script>
+    Object.defineProperty(Element.prototype, 'clearChildren', {
+      configurable: true,
+      enumerable: false,
+      value: function clearChildren() {
+        while (this.firstChild) this.removeChild(this.lastChild)
+      }
+    })
+
+    fetch('https://raw.githubusercontent.com/github/gemoji/master/db/emoji.json').then(r => r.json())
+    .then(data => {
+      for (let e of data) {
+        e._s = e.emoji + e.description + e.aliases + e.tags
+      }
+
+      let $input  = document.querySelector('#search')
+      let $result = document.querySelector('#result')
+
+      $input.oninput = function search() {
+        $result.clearChildren();
+
+        let value = $input.value.trim()
+        if (!value) return;
+        let values = value.split(/\s+/)
+
+        let max = 20
+        let result = ''
+        for (let e of data) {
+          if (values.some(s => e._s.includes(s))) {
+            result += (e._$ ||= render(e))
+            max--
+          }
+          if (!max) break;
+        }
+
+        $result.innerHTML = result
+      }
+
+      $input.dispatchEvent(new InputEvent('input'))
+
+      function h(tag, className) {
+        let el = document.createElement(tag)
+        el.className = className
+        return el
+      }
+
+      function render(e) {
+        return `<span class="emoji">${e.emoji}</span>\
+<span class="aliases">${e.aliases.map(e => `:${e}:`).join(' ')}</span>\
+<span class="tags">(${e.tags.join(', ')})</span>\
+<span class="desc">${e.description}</span>`
+      }
+    })
+  </script>
+</body>
+</html>
