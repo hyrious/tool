@@ -138,6 +138,10 @@ $fetch_version.onclick = async function updateVersions() {
     }
 }
 
+$versions.oninput = function enableExtract() {
+    $extract.disabled = false
+}
+
 $extract.onclick = async function fetchAndExtractPackage() {
     $extract.disabled = true
     const name = $search.value.trim()
