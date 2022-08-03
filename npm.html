@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>NPM Browser</title>
+    <style>
+        body {
+            padding: 20px;
+        }
+        input, select, option {
+            font-family: monospace;
+            font-size: 1rem;
+        }
+        h2 {
+            font-size: 1.2rem;
+            font-family: monospace;
+        }
+        .browser {
+            padding-top: 0;
+            display: grid;
+            grid-template-rows: auto 1fr;
+        }
+        .browser h2, .browser pre {
+            margin: 0.5rem 0;
+        }
+        .browser pre {
+            font-size: 0.8rem;
+            overflow: auto;
+        }
+        .row {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            column-gap: 0.5rem;
+            align-items: center;
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets/styles/github.min.css" media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+</head>
+<body>
+
+<section>
+    <input id="$search" list="$search_result" type="search" placeholder="lib0"
+           autocomplete="off" spellcheck="false" autofocus>
+    <datalist id="$search_result"></datalist>
+    <button id="$fetch_version" disabled>Fetch Version</button>
+    <select id="$versions"></select>
+    <button id="$extract" disabled>Fetch Package</button>
+</section>
+
+<section class="browser">
+    <div class="row">
+        <select id="$file"></select>
+        <span class="column">
+            <input id="$wordwrap" type="checkbox">
+            <label for="$wordwrap">word wrap</label>
+        </span>
+        <span class="column">
+            <button id="$highlight">highlight</button>
+        </span>
+    </div>
+    <pre id="$preview"></pre>
+</section>
+
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets/highlight.min.js"></script>
+
+<script type="module">
+
+const registry = 'https://registry.npmjs.org'
+
+import untar from "https://esm.sh/js-untar"
+import pako from "https://esm.sh/pako"
+
+const packageNameCache = new Set()
+const packageCache = new Map()
+
+$search.oninput = (function() {
+    const api = new URL('https://registry.npmjs.org/-/v1/search')
+
+    let controller = null
+
+    async function search() {
+        api.searchParams.set('text', $search.value.trim())
+        try {
+            const ret = await fetch(api, { signal: controller.signal }).then(r => r.json())
+            const packages = ret.objects.map(e => e.package)
+            packages.forEach(p => packageNameCache.add(p.name))
+            refreshFetchVersionButton()
+            $search_result.innerHTML = packages
+                .map(p => `<option value="${p.name}">${p.description}</option>`)
+                .join('')
+            $search.focus()
+        } catch (e) {
+            if (e.message.includes('abort')) return
+            throw e
+        }
+    }
+
+    function refreshFetchVersionButton() {
+        const exist = packageNameCache.has($search.value.trim())
+        $fetch_version.disabled = !exist
+        if (exist) {
+            $versions.innerHTML = ''
+            $versions.value = ''
+        }
+    }
+
+    let timer = 0
+
+    return function updateSearchResult() {
+        clearTimeout(timer)
+        refreshFetchVersionButton()
+        controller && controller.abort()
+        if ($search.value.trim()) {
+            controller = new AbortController()
+            timer = setTimeout(search, 200)
+        }
+    }
+})()
+
+$fetch_version.onclick = async function updateVersions() {
+    const name = $search.value.trim()
+    if (!packageNameCache.has(name)) return;
+    $fetch_version.disabled = true
+    try {
+        const url = 'https://data.jsdelivr.com/v1/package/npm/' + name
+        const ret = await fetch(url).then(r => r.json())
+        $versions.innerHTML = ret.versions.map(version => `<option value="${version}">${version}</option>`)
+        $versions.value = ret.tags.latest
+        $extract.disabled = false
+    } catch (e) {
+        if (e.message.includes('abort')) return
+        throw e
+    }
+}
+
+$extract.onclick = async function fetchAndExtractPackage() {
+    $extract.disabled = true
+    const name = $search.value.trim()
+    const version = $versions.value
+    const url = registry + '/' + name + '/-/' + name + '-' + version + '.tgz'
+    console.log('fetching', url)
+    const buffer = await fetch(url).then(r => r.arrayBuffer())
+    const array = pako.inflate(buffer)
+    const files = await untar(array.buffer).progress(file => {
+        console.log('.', file)
+    })
+    $file.innerHTML = files
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(file => `<option value="${file.name}">${file.name}</option>`)
+        .join('')
+    $preview.innerHTML = ''
+    packageCache.set(name, files)
+    $file.oninput()
+}
+
+$file.oninput = (function() {
+    const HLJS_MAX_LENGTH = 20480
+    const decoder = new TextDecoder()
+
+    return function updatePreview() {
+        const name = $search.value
+        const files = packageCache.get(name)
+        const key = $file.value
+        const { buffer } = files.find(f => f.name === key)
+        const text = decoder.decode(buffer)
+        $preview.textContent = text
+        if (text.length < HLJS_MAX_LENGTH) {
+            $highlight.click()
+        }
+    }
+})()
+
+$wordwrap.oninput = function updatePreview() {
+    $preview.style.whiteSpace = $wordwrap.checked ? 'pre-wrap' : ''
+}
+
+$highlight.onclick = (function() {
+    function guessLanguage() {
+        $preview.className = ''
+        const filename = $file.value
+        const index = filename.lastIndexOf('.')
+        if (index < 0) return;
+        const ext = filename.slice(index + 1)
+        if (ext === 'map') ext = 'json';
+        if (ext === 'cjs') ext = 'js';
+        $preview.className = 'language-' + ext
+    }
+
+    return function highlightPreview() {
+        guessLanguage()
+        hljs.highlightElement($preview)
+    }
+})()
+
+</script>
+</body>
+</html>
