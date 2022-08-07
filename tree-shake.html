@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Tree-Shaking</title>
+    <style>
+        .status {
+            max-width: 90%;
+            margin: 0 auto;
+            opacity: .1;
+            transition: opacity .5s;
+            animation: blinking 1s infinite alternate;
+        }
+        .status.stop {
+            animation: none;
+            opacity: 1;
+        }
+        @keyframes blinking {
+            from { opacity: .1 }
+            to { opacity: 1 }
+        }
+        textarea {
+            padding: .5em;
+            font-family: monospace;
+            font-size: 1rem;
+            resize: none;
+        }
+        section {
+            max-width: 90%;
+            margin: 0 auto;
+            display: flex;
+            flex-flow: column nowrap;
+            gap: 8px;
+        }
+        .output {
+            max-width: 90%;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        textarea, button {
+            color: var(--front);
+            border-color: var(--control);
+            background-color: var(--back);
+        }
+        button {
+            padding: .25em;
+            border: 2px solid var(--control);
+            border-radius: 3px;
+        }
+        button:active, button.active {
+            border-color: var(--front);
+            background-color: var(--control);
+        }
+        button:disabled {
+            opacity: .5;
+            cursor: not-allowed;
+        }
+        .column {
+            display: grid;
+            position: relative;
+        }
+        .column label {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            opacity: .4;
+            pointer-events: none;
+        }
+        .column textarea {
+            min-height: 200px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Tree-Shaking</h1>
+
+    <p class="status" id="$status">Loading&hellip;</p>
+
+    <section class="input">
+        <textarea id="$code" placeholder="let a = Object.prototype.hasOwnProperty" autocomplete="off" spellcheck="false"></textarea>
+        <button id="$minify" disabled>Tree Shake <kbd>ctrl&plus;b</kbd></button>
+    </section>
+
+    <output class="output">
+        <div class="column">
+            <label for="$rollup">rollup</label>
+            <textarea id="$rollup" readonly></textarea>
+        </div>
+        <div class="column">
+            <label for="$terser">terser</label>
+            <textarea id="$terser" readonly></textarea>
+        </div>
+        <div class="column">
+            <label for="$esbuild">esbuild</label>
+            <textarea id="$esbuild" readonly></textarea>
+        </div>
+    </output>
+
+<script type="module">
+    try {
+        $code.value = decodeURIComponent(atob(location.hash.slice(1)))
+    } catch {}
+
+    $code.oninput = function updateQuery() {
+        location.hash = btoa(encodeURIComponent($code.value))
+    }
+
+    import autosize from 'https://esm.sh/@github/textarea-autosize?bundle'
+
+    autosize($code)
+
+    const Minifiers = {
+        rollup: import('https://esm.sh/rollup'),
+        esbuild: import('https://esm.sh/esbuild-wasm').then(async ({ default: esbuild }) => {
+            await esbuild.initialize({ wasmURL: `https://cdn.jsdelivr.net/npm/esbuild-wasm@${esbuild.version}/esbuild.wasm` })
+            await esbuild.transform('let a = 1')
+            return esbuild
+        }),
+        terser: import('https://esm.sh/terser')
+    }
+
+    await Promise.all(Object.keys(Minifiers).map(async name => {
+        let minifier = Minifiers[name] = await Minifiers[name]
+        let version = name === 'esbuild'
+                    ? minifier.version
+                    : name === 'rollup'
+                    ? minifier.VERSION
+                    : await fetch('https://esm.sh/terser')
+                        .then(r => r.url.slice(r.url.lastIndexOf('@') + 1))
+
+        window[name] = minifier
+
+        console.log(name, version, minifier)
+        $status.append(`${name}@${version}..`)
+    }))
+
+    $status.textContent = $status.textContent.slice(8, -2).replace(/\.\./g, ' ')
+    $status.classList.add('stop')
+
+    async function runEsbuild(code) {
+        let result = await esbuild.transform(code, { treeShaking: true });
+        return result.code;
+    }
+
+    async function runRollup(code) {
+        let modules = { "main.js": code };
+        let bundle = await rollup.rollup({
+            input: Object.keys(modules)[0],
+            plugins: [
+                {
+                    resolveId(importee, importer) {
+                        if (!importer) return importee;
+                        if (importee[0] !== ".") return false;
+                    },
+                    load(id) {
+                        return modules[id];
+                    },
+                },
+            ],
+            onwarn: () => {},
+        });
+        let generated = await bundle.generate({ format: "es" });
+        return generated.output[0].code;
+    }
+
+    async function runTerser(code) {
+        const result = await terser.minify(code, { module: true });
+        return result.code;
+    }
+
+    $minify.disabled = false
+    $minify.onclick = function runAll() {
+        const code = $code.value
+
+        function runX(f, $) {
+            f(code).then(e => { $.value = e.trim() || '// nothing!' })
+                  .catch(e => { $.value = e.message })
+        }
+
+        runX(runRollup, $rollup)
+        runX(runTerser, $terser)
+        runX(runEsbuild, $esbuild)
+    }
+
+    document.addEventListener('keydown', ev => {
+        if (ev.key === 'b' && ev.ctrlKey) {
+            ev.preventDefault()
+            $minify.classList.add('active')
+        }
+    })
+
+    document.addEventListener('keyup', ev => {
+        if (ev.key === 'b' && $minify.classList.contains('active')) {
+            ev.preventDefault()
+            $minify.classList.remove('active')
+            $minify.click()
+        }
+    })
+</script>
+</body>
+</html>
