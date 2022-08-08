@@ -146,7 +146,7 @@ $extract.onclick = async function fetchAndExtractPackage() {
     $extract.disabled = true
     const name = $search.value.trim()
     const version = $versions.value
-    const url = registry + '/' + name + '/-/' + name + '-' + version + '.tgz'
+    const url = registry + '/' + name + '/-/' + name.split('/').pop() + '-' + version + '.tgz'
     console.log('fetching', url)
     const buffer = await fetch(url).then(r => r.arrayBuffer())
     const array = pako.inflate(buffer)
