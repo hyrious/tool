@@ -31,6 +31,9 @@
             font-size: 0.8rem;
             overflow: auto;
         }
+        .file {
+            width: 100%;
+        }
         .row {
             display: grid;
             grid-template-columns: 1fr auto auto;
@@ -54,7 +57,7 @@
 
 <section class="browser">
     <div class="row">
-        <select id="$file"></select>
+        <select class="file" id="$file"></select>
         <span class="column">
             <input id="$wordwrap" type="checkbox">
             <label for="$wordwrap">word wrap</label>
@@ -159,6 +162,7 @@ $extract.onclick = async function fetchAndExtractPackage() {
         .join('')
     $preview.innerHTML = ''
     packageCache.set(name, files)
+    $file.value = 'package/package.json'
     $file.oninput()
 }
 
