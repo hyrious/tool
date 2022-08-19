@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>XP ↔ VX/VA Character Sprites</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html, body, main {
+      height: 100%;
+    }
+    body {
+      margin: 0;
+    }
+    main {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      padding: 8px;
+      gap: 8px;
+    }
+    section {
+      border: 1px solid;
+      position: relative;
+    }
+    section::before {
+      content: attr(data-bg);
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: grey;
+    }
+    input[type=file] {
+      appearance: none;
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+    }
+    ul {
+      position: absolute;
+      inset: 0;
+      margin: 0;
+      padding: 8px;
+      list-style-type: none;
+    }
+    li {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    canvas {
+      border: 1px solid;
+    }
+    #preview {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+    }
+    #preview img {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <section id="xp" data-bg="4x4">
+      <input id="xp-input" type="file" multiple accept="image/*">
+      <ul id="xp-list" style="display: none">
+        <li>
+          <canvas width="50" height="50"></canvas>
+          <span>file.png</span>
+          <button>download</button>
+        </li>
+      </ul>
+    </section>
+    <section id="vx" data-bg="3x4">
+      <input id="vx-input" type="file">
+      <ul id="vx-list" style="display: none"></ul>
+    </section>
+  </main>
+
+  <section id="preview"></section>
+
+  <script>
+    function $(sel) {
+      return document.querySelector(sel)
+    }
+    function h(tag) {
+      return document.createElement(tag)
+    }
+    function fileToImage(file) {
+      return new Promise(resolve => {
+        let fr = new FileReader()
+        fr.onload = () => resolve(fr.result)
+        fr.readAsDataURL(file)
+      }).then(url => new Promise(resolve => {
+        let img = new Image()
+        img.onload = () => resolve(img)
+        img.src = url
+      }))
+    }
+    function download(image, name) {
+      let a = h('a')
+      a.href = image.src
+      a.download = name
+      document.body.append(a)
+      a.click()
+      a.remove()
+    }
+    function imageToCanvas(img) {
+      let ratio = img.width / img.height
+      let canvas = h('canvas')
+      canvas.width = canvas.height = 50
+      if (ratio > 1) { // width > height
+        let dh = canvas.width / ratio
+        let dy = ((canvas.height - dh) / 2) | 0
+        canvas.getContext('2d').drawImage(img, 0, dy, canvas.width, dh)
+      } else { // width < height
+        let dw = canvas.height * ratio
+        let dx = ((canvas.width - dw) / 2) | 0
+        canvas.getContext('2d').drawImage(img, dx, 0, dw, canvas.height)
+      }
+      canvas.onpointerenter = () => $('#preview').append(img)
+      canvas.onpointerleave = () => $('#preview').removeChild(img)
+      return canvas
+    }
+    function pngify(name) {
+      let i = name.lastIndexOf('.')
+      if (i >= 0) {
+        let ext = name.slice(i)
+        name = name.slice(0, i)
+        if (ext.toLowerCase() === '.png') {
+          return name + '2.png'
+        }
+      }
+      return name + '.png'
+    }
+    function waitImage(img) {
+      if (img.complete) return Promise.resolve(img);
+      return new Promise(resolve => {
+        img.onload = () => resolve(img)
+      })
+    }
+
+    $('#xp-input').oninput = $('#vx-input').oninput = function main(ev) {
+      const { id, files } = ev.target
+      const here = $('#' + id.slice(0, 2) + '-list')
+      const fromXP = id.includes('xp')
+      const there = $('#' + (fromXP ? 'vx' : 'xp') + '-list')
+      here.innerHTML = there.innerHTML = ''
+      here.style.display = there.style.display = ''
+
+      Array.from(files).forEach(file => {
+        fileToImage(file).then(async img => {
+          // here
+          let li = h('li')
+          let title = h('span')
+          title.textContent = file.name
+          let action = h('button')
+          action.textContent = 'download'
+          action.onclick = () => download(img, file.name)
+          li.append(imageToCanvas(img), title, action)
+          here.append(li)
+
+          // there
+          let li2 = h('li')
+          let result = h('canvas')
+          if (fromXP) { // 4x4 -> 3x4
+            result.width = img.width / 4 * 3
+            result.height = img.height
+            result.getContext('2d').drawImage(
+              img,
+              img.width / 4, 0, result.width, result.height,
+              0, 0, result.width, result.height
+            )
+          } else { // 3x4 -> 4x4
+            result.width = img.width / 3 * 4
+            result.height = img.height
+            let ctx = result.getContext('2d')
+            ctx.drawImage(
+              img,
+              img.width / 3, 0, img.width / 3, img.height,
+              0, 0, img.width / 3, result.height
+            )
+            ctx.drawImage(
+              img,
+              img.width / 3, 0
+            )
+          }
+          let png = new Image()
+          png.src = result.toDataURL()
+          await waitImage(png)
+          let name2 = pngify(file.name)
+          let title2 = h('span')
+          title2.textContent = name2
+          let action2 = h('button')
+          action2.textContent = 'download'
+          action2.onclick = () => download(png, name2)
+          li2.append(imageToCanvas(png), title2, action2)
+          there.append(li2)
+        })
+      })
+    }
+  </script>
+</body>
+</html>
