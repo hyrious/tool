@@ -178,7 +178,11 @@
     }
 
     async function runTerser(code) {
-        const result = await terser.minify(code, { module: true });
+        const result = await terser.minify(code, {
+            module: true,
+            compress: { defaults: false, unused: true },
+            mangle: false,
+        });
         return result.code;
     }
 
