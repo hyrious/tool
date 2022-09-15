@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>GIF Viewer</title>
+    <style>
+        html {
+            height: 100%;
+            overflow: hidden;
+        }
+        body {
+            height: 100%;
+            display: flex;
+            flex-flow: column nowrap;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        canvas {
+            max-width: 100%;
+            max-height: 100%;
+            overflow: hidden;
+        }
+        .tip {
+            user-select: none;
+            pointer-events: none;
+        }
+        .progress {
+            width: 90%;
+        }
+    </style>
+</head>
+<body>
+    <canvas></canvas>
+    <span class="tip">Drag & Drop a GIF here.</span>
+    <input id="progress" class="progress" type="range" style="display: none;">
+    <label for="progress"></label>
+    <script src="https://cdn.jsdelivr.net/npm/omggif@1.0.10/omggif.js"></script>
+    <script>
+        Object.assign(document.body, {
+            ondragover(e) {
+                e.preventDefault()
+            },
+            ondrop(e) {
+                e.preventDefault()
+                const file = e.dataTransfer.files[0]
+                file && file.arrayBuffer().then(buffer => {
+                    let img = document.querySelector('img')
+                    const tip = document.querySelector('.tip')
+                    const progress = document.querySelector('.progress')
+                    const label = progress.nextElementSibling
+                    const canvas = document.querySelector('canvas')
+                    tip.textContent = 'decoding...'
+                    let gr
+                    try {
+                        gr = new GifReader(new Uint8Array(buffer))
+                    } catch (e) {
+                        tip.textContent = e.message
+                        return
+                    }
+                    console.log(gr)
+                    tip.textContent = `[width: ${gr.width}, height: ${gr.height}]`
+                    canvas.width = gr.width
+                    canvas.height = gr.height
+                    const ctx = canvas.getContext('2d')
+
+                    Object.assign(progress, {
+                        min: 0, max: 0, step: 1, value: 0
+                    })
+                    progress.style.display = ''
+
+                    const cached = Array(gr.numFrames())
+
+                    function updateFrame() {
+                        ctx.putImageData(cached[+progress.value], 0, 0)
+                    }
+
+                    function updateLabel() {
+                        label.textContent = +progress.value + 1 + '/' + (+progress.max + 1)
+                    }
+
+                    (async () => {
+                        let last
+                        for (let i = 0; i < cached.length; ++i) {
+                            const pixels = ctx.createImageData(gr.width, gr.height)
+                            last && pixels.data.set(last.data)
+                            gr.decodeAndBlitFrameRGBA(i, pixels.data)
+                            last = cached[i] = pixels
+                            progress.value = progress.max = i
+                            updateLabel()
+                            updateFrame()
+                            await new Promise(requestAnimationFrame)
+                        }
+                    })().then(() => {
+                        function refresh() {
+                            updateLabel()
+                            updateFrame()
+                        }
+                        progress.value = 0
+                        progress.oninput = refresh
+                        refresh()
+                    })
+                })
+            }
+        })
+    </script>
+</body>
+</html>
