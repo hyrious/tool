@@ -83,27 +83,29 @@
                         label.textContent = +progress.value + 1 + '/' + (+progress.max + 1)
                     }
 
+                    function refresh() {
+                        updateLabel()
+                        updateFrame()
+                    }
+
                     (async () => {
                         let last
                         for (let i = 0; i < cached.length; ++i) {
                             const pixels = ctx.createImageData(gr.width, gr.height)
-                            last && pixels.data.set(last.data)
+                            const info = gr.frameInfo(i)
+                            if (info.disposal !== 2) {
+                                last && pixels.data.set(last.data)
+                            }
                             gr.decodeAndBlitFrameRGBA(i, pixels.data)
                             last = cached[i] = pixels
                             progress.value = progress.max = i
-                            updateLabel()
-                            updateFrame()
+                            refresh()
                             await new Promise(requestAnimationFrame)
-                        }
-                    })().then(() => {
-                        function refresh() {
-                            updateLabel()
-                            updateFrame()
                         }
                         progress.value = 0
                         progress.oninput = refresh
                         refresh()
-                    })
+                    })()
                 })
             }
         })
