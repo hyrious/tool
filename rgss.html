@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>$RGSS_SCRIPTS</title>
+    <style>
+        .file-input { display: none; }
+        .droppable {
+            display: block;
+            max-width: 90%;
+            margin: 0 auto;
+            padding: 40px 0;
+            border: 1px dashed;
+            border-radius: 6px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .droppable.active {
+            border-style: solid;
+            border-color: var(--control);
+        }
+        .split-pane {
+            display: flex;
+            height: 544px;
+            overflow: hidden;
+            position: relative;
+        }
+        .split-pane.dragging {
+            cursor: ew-resize;
+        }
+        .dragging .left,
+        .dragging .right {
+            pointer-events: none;
+        }
+        .left, .right {
+            position: relative;
+            height: 100%;
+            display: flex;
+            flex-flow: column nowrap;
+        }
+        .left {
+            border-right: 1px solid var(--control);
+        }
+        .dragger {
+            position: absolute;
+            z-index: 3;
+            top: 0;
+            bottom: 0;
+            right: -5px;
+            width: 10px;
+            cursor: ew-resize;
+        }
+        .file-list {
+            height: 100%;
+            overflow: auto;
+            line-height: 1.5;
+        }
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .code {
+            margin: 0;
+            padding: 0 6px;
+            height: 100%;
+            overflow: auto;
+            font-size: 0.85rem;
+        }
+        .file-item:has(:checked) {
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Scripts Viewer</h1>
+    <label id="$sl" class="droppable" for="$s">Scripts.rvdata2</label>
+    <input class="file-input" id="$s" type="file" multiple>
+    <section id="$dragger_container" class="split-pane">
+        <div id="$dragger_left" class="left">
+            <div id="$file_list" class="file-list">
+                <span>&hellip;</span>
+            </div>
+            <div id="$dragger" class="dragger"></div>
+        </div>
+        <div id="$dragger_right" class="right">
+            <pre class="code"><code class="hljs language-ruby" id="$code"></code></pre>
+        </div>
+    </section>
+    <script src="https://cdn.jsdelivr.net/npm/@hyrious/marshal@0.1.6"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.0.4/dist/pako_inflate.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.6.0/highlight.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.6.0/styles/github.min.css"
+          media="(prefers-color-scheme: light)">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.6.0/styles/github-dark.min.css"
+          media="(prefers-color-scheme: dark)">
+    <style>
+        .hljs { background: transparent; }
+        pre code.hljs { padding: 0; }
+        /* https://gist.github.com/hackjutsu/0a6338d66f4fd7d338fd0c04f3454394 */
+        .hljs-line-number {
+          text-align: right;
+          padding-left: 8px;
+          padding-right: 8px;
+          color: var(--front);
+          width: 1%;
+          min-width: 32px;
+          font-size: 12px;
+          white-space: nowrap;
+          opacity: 0.5;
+        }
+        [data-lineno]::before {
+          content: attr(data-lineno);
+        }
+    </style>
+    <script>
+        $sl.ondragover = function on_dragover(ev) {
+            ev.preventDefault()
+            $sl.classList.add('active')
+        }
+        $sl.ondrop = function on_drop(ev) {
+            ev.preventDefault()
+            $sl.classList.remove('active')
+            load(ev.dataTransfer.files[0])
+        }
+        $s.oninput = function on_file(ev) {
+            load(this.files[0])
+        }
+        window.$RGSS_SCRIPTS = []
+        $file_list.oninput = function on_select(ev) {
+            var i = Number(ev.target.value)
+            if (Number.isInteger(i)) {
+                $code.innerHTML = ''
+                $code.appendChild(document.createTextNode($RGSS_SCRIPTS[i][3]))
+                hljs.highlightElement($code)
+                var table = lineno($code.innerHTML)
+                $code.innerHTML = table
+            }
+        }
+        // https://gist.github.com/hackjutsu/0a6338d66f4fd7d338fd0c04f3454394
+        function lineno(html) {
+            var COMMENT_RE = /<span class="hljs-comment">(.|\n)*?<\/span>/g;
+            html = html.replace(COMMENT_RE, (data) => data.replace(/\r?\n/g, () => `\n<span class="hljs-comment">`));
+            html = html
+                .split(/\r?\n/)
+                .map(
+                  (line, index) =>
+                    `<tr data-line="${index + 1}">` +
+                    `<td class="hljs-line-number" data-lineno="${index + 1}"></td><td>${line}</td>` +
+                    `</tr>`
+                )
+                .join("");
+            return `<table class="hljs-code-table">${html}</table>`;
+        }
+        function load(file) {
+            return load_(file).catch((error) => { console.error(error); $RGSS_SCRIPTS = []; refresh_viewer() })
+        }
+        async function load_(file) {
+            if (!file) return;
+            var buffer = await file.arrayBuffer()
+            $RGSS_SCRIPTS = marshal.load(buffer, { decodeString: false })
+            var decoder = new TextDecoder()
+            $RGSS_SCRIPTS.forEach(e => {
+                e[1] = decoder.decode(e[1])
+                e[3] = pako.inflate(e[2], { to: 'string' })
+            })
+            refresh_viewer()
+        }
+        function refresh_viewer() {
+            if ($RGSS_SCRIPTS.length === 0) {
+                $file_list.innerHTML = '<span>&hellip;</span>'
+                return
+            }
+            var template = '<label class="file-item"><input type="radio" name="file" value={|value|}><span class="file-name">{|name|}</span></label>'
+            var result = ''
+            $RGSS_SCRIPTS.forEach((e, i) => {
+                result += template.replace('{|value|}', String(i)).replace('{|name|}', e[1])
+            })
+            $file_list.innerHTML = result
+        }
+        /* split pane */ {
+            function clamp(a, min, max) {
+                return a < min ? min : a > max ? max : a
+            }
+            var state = { dragging: false, split: 25 }
+            var last = { x: 0, split: 25 }
+            $dragger.onpointerdown = function start(ev) {
+                ev.preventDefault()
+                state.dragging = true
+                last.x = ev.pageX
+                last.split = clamp(state.split, 20, 80)
+                refresh()
+            }
+            $dragger_container.onpointermove = function move(ev) {
+                if (state.dragging) {
+                    var pos = ev.pageX, width = this.offsetWidth, dp = pos - last.x
+                    state.split = last.split + ~~((dp / width) * 100)
+                    refresh()
+                }
+            }
+            $dragger_container.onpointerup = $dragger_container.onpointerleave = function end() {
+                state.dragging = false
+                refresh()
+            }
+            function refresh() {
+                const split = clamp(state.split, 20, 80)
+                $dragger_container.classList.toggle('dragging', state.dragging)
+                $dragger_left.style.width = split + '%'
+                $dragger_right.style.width = (100 - split) + '%'
+            }
+            refresh()
+        }
+    </script>
+</body>
+</html>
