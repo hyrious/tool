@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>GitHub Weekly</title>
+    <style>
+        .env {
+            font-family: monospace;
+            font-size: 1rem;
+            line-height: 1.5;
+        }
+        .err,
+        .warn,
+        .loading {
+            background-color: rgba(255, 0, 0, 0.2);
+            margin: 4px 0;
+            padding: 8px;
+        }
+        .warn {
+            background-color: rgba(255, 127, 0, 0.2);
+        }
+        .loading {
+            background-color: rgba(0, 127, 255, 0.2);
+            animation: blinking 1s infinite alternate;
+        }
+        @keyframes blinking {
+            from { opacity: .1 }
+            to { opacity: 1 }
+        }
+        .rate {
+            opacity: 0.5;
+        }
+        .list {
+            margin: 0;
+            padding: 0;
+            list-style-type: none;
+            display: flex;
+            flex-flow: column wrap;
+            gap: 8px;
+        }
+        .list li {
+            line-height: 1.5;
+        }
+        .list > li {
+            background-color: rgba(127,127,127,.2);
+            padding: 8px;
+            border-radius: 2px;
+        }
+        .list > li > ul {
+            padding: 8px 0 8px 1rem;
+            list-style-type: none;
+        }
+        .list time {
+            opacity: 0.5;
+            font-size: 0.9rem;
+        }
+        .action {
+            opacity: 0.8;
+        }
+        .commit_title {
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">What have I done in the last week?</h1>
+    <section class="env">
+        <label for="$username">USERNAME</label>
+        <input id="$username" type="text" autocomplete="off" autofocus><br>
+        <label for="$token"><a href="https://github.com/settings/tokens" tabindex="-1" target="_blank" rel="noreferrer">GH TOKEN</a></label>
+        <input id="$token" type="password" autocomplete="off" style="width: 42ch;">
+        <span>(Optional)</span><br>
+        <label for="$after">AFTERDAY</label>
+        <input id="$after" type="date"><br>
+        <button onclick="main()">FETCH</button>
+        <span class="rate" title="rate limit" id="$rate">1/0</span>
+        <input id="$filter_me" type="checkbox">
+        <label for="$filter_me">Ignore self repo</label>
+    </section>
+    <section class="result">
+        <p class="err" id="$no_username" style="display: none;">No username.</p>
+        <p class="warn" id="$no_token" style="display: none;">No token, rate limit will be very small.</p>
+        <p class="err" id="$no_date" style="display: none;">No after day.</p>
+        <p class="loading" id="$loading" style="display: none;">fetching page 1</p>
+        <ul class="list" id="$events_list"></ul>
+    </section>
+    <script>
+        async function main() {
+            if (!validate()) return;
+
+            const USERNAME = $username.value
+            const TOKEN = $token.value
+            const AFTER = $after.value
+            const FILTER = $filter_me.checked
+
+            $loading.style.display = ''
+            let date = new Date().toISOString().slice(0, 10)
+            let page = 1
+            let events = []
+            while (date >= AFTER) {
+                console.log('fetch page', page)
+                $loading.textContent = `fetching page ${page}, total events = ${events.length}`
+                const slice = await fetch_events(USERNAME, TOKEN, page++)
+                for (const event of slice) {
+                    date = event.created_at.slice(0, 10)
+                    if (date >= AFTER) {
+                        if (!FILTER || !event.repo.name.startsWith(USERNAME + '/'))
+                            events.push(event)
+                    } else {
+                        break
+                    }
+                }
+                console.log('received', events.length, 'events')
+            }
+            $loading.style.display = 'none'
+
+            window.$events = events
+            console.log('$events =', events)
+            render_result()
+        }
+        const renderer = {
+            PullRequestEvent(ev, html) {
+                const {action, number, pull_request} = ev.payload
+                html.push(`<li class="pr">
+                    <span class="action">${action}</span>
+                    <strong class="type">PR</strong>
+                    <a class="issue" href="https://github.com/${ev.repo.name}/pull/${number}">${ev.repo.name}#${number}</a>
+                    <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
+                    <ul><li><span class="issue_title">${pull_request.title}</span></li></ul>
+                </li>`)
+            },
+            CreateEvent(ev) {
+                // created branch
+            },
+            DeleteEvent(ev) {
+                // deleted branch
+            },
+            PushEvent(ev, html) {
+                const {commits} = ev.payload
+                html.push(`<li class="push">
+                    <span class="action">pushed</span>
+                    <span>to <a href="https://github.com/${ev.repo.name}">${ev.repo.name}</a></span>
+                    <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
+                    <ul class="commits">
+                        ${commits.map(e => `<li class="commit_title">${e.message}</li>`).join('')}
+                    </ul>
+                </li>`)
+            },
+            WatchEvent(ev) {
+                // starred repo
+            },
+            IssueCommentEvent(ev) {
+                // created comment
+            },
+            IssuesEvent(ev) {
+                // created issue
+            },
+            PullRequestReviewEvent(ev, html) {
+                const {action, pull_request, review} = ev.payload
+                html.push(`<li class="review">
+                    <span class="action">${review.state}</span>
+                    <strong class="type">REVIEW</strong>
+                    <span>to <a href="https://github.com/${ev.repo.name}/pull/${pull_request.number}">${ev.repo.name}#${pull_request.number}</a></span>
+                    <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
+                    ${review.body ? `<pre>${review.body}</pre>` : ''}
+                </li>`)
+            },
+            PullRequestReviewCommentEvent(ev, html) {
+                const {action, comment, pull_request} = ev.payload
+                html.push(`<li class="review">
+                    <span class="action">${action}</span>
+                    <strong class="type">REVIEW</strong>
+                    <span>to <a href="https://github.com/${ev.repo.name}/pull/${pull_request.number}">${ev.repo.name}#${pull_request.number}</a></span>
+                    <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
+                    <ul><li><span class="comment">${comment.body}</span></li></ul>
+                </li>`)
+            },
+        }
+        function trunc(str) {
+            const s = str.slice(0, str.indexOf('\n'))
+            if (s.length + 1 < str.length) return s + '…'
+            return str
+        }
+        function render_result() {
+            let html = []
+            for (const ev of window.$events) {
+                let handler = renderer[ev.type]
+                if (!handler) {
+                    console.error('No renderer for', ev.type, ev)
+                } else {
+                    handler(ev, html)
+                }
+            }
+            $events_list.innerHTML = html.join('')
+        }
+        function validate() {
+            const not = a => a ? 'none' : ''
+            $no_username.style.display = not($username.value)
+            $no_token.style.display = not($token.value)
+            $no_date.style.display = not($after.value)
+            return $username.value && $after.value
+        }
+        async function fetch_events(username, token, page = 1) {
+            const headers = {
+                Accept: "application/vnd.github+json"
+            }
+            if (token) {
+                headers.Authorization = "Bearer " + token
+            }
+            const r = await fetch(`https://api.github.com/users/${username}/events?per_page=100&page=${page}`, {
+                headers,
+            })
+
+            if (!r.ok) {
+                throw new Error(await r.text())
+            }
+
+            const limit = r.headers.get('x-ratelimit-limit')
+            const remaining = r.headers.get('x-ratelimit-remaining')
+            $rate.textContent = `${remaining}/${limit}`
+
+            return await r.json()
+        }
+        {
+            let t = new Date()
+            t.setDate(t.getDate() - t.getDay() + 1) // last Monday before today
+            $after.value = t.toISOString().slice(0, 10)
+        }
+        {
+            let search = new URLSearchParams(location.search)
+            let q = search.get('q')
+            let i = search.get('i')
+            if (i) {
+                $filter_me.checked = true
+            }
+            if (q) {
+                $username.value = q
+                main()
+            }
+        }
+    </script>
+</body>
+</html>
