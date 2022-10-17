@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Sort JSON</title>
+    <style>
+        .content {
+            display: grid;
+            gap: 8px;
+        }
+        textarea {
+            padding: .5em;
+            font-family: monospace;
+            font-size: 1rem;
+            resize: none;
+        }
+        button {
+            color: var(--front);
+            border-color: var(--control);
+            background-color: var(--back);
+            padding: .25em;
+            border: 2px solid var(--control);
+            border-radius: 3px;
+            font-size: 1rem;
+        }
+        button:active, button.active {
+            border-color: var(--front);
+            background-color: var(--control);
+        }
+        .info {
+            margin: 8px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Sort JSON</h1>
+    <section class="content">
+        <textarea id="$t" placeholder="{}" rows="2" style="max-height: 200px;">{"b":0,"a":1}</textarea>
+        <button onclick="sort_json()">SORT</button>
+        <button onclick="copy()">COPY</button>
+        <p id="$p" class="info">Paste JSON and click [SORT]</p>
+    </section>
+    <script>
+        // @github/textarea-autosize
+        $t.oninput = $t.onchange = $t.onpaste = function textarea_autosize() {
+            if ($t.value === $t.prev) return;
+            $t.style.height = 'auto'
+            $t.style.height = $t.scrollHeight + 2 /* border */ + 'px'
+            $t.prev = $t.value
+        }
+
+        function sort_json() {
+            let json
+            try {
+                json = JSON.parse($t.value)
+            } catch (err) {
+                show_error(err)
+                return
+            }
+
+            show_error()
+            json = sorted_clone(json)
+            $t.value = JSON.stringify(json, null, 2)
+            $t.dispatchEvent(new InputEvent('input'))
+            $p.textContent = 'Sorted'
+        }
+
+        function sorted_clone(obj) {
+            if (Array.isArray(obj)) {
+                return obj.map(sorted_clone)
+            } else if (typeof obj === 'object' && obj !== null) {
+                const keys = Object.keys(obj).sort()
+                const clone = {}
+                for (const key of keys) {
+                    clone[key] = sorted_clone(obj[key])
+                }
+                return clone
+            } else {
+                return obj
+            }
+        }
+
+        function copy() {
+            navigator.clipboard.writeText($t.value)
+            $p.textContent = 'Copied ' + $t.value.length + ' bytes'
+        }
+
+        function show_error(err) {
+            $p.textContent = err ? `Error: ${err.message}` : ''
+        }
+    </script>
+</body>
+</html>
