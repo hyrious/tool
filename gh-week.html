@@ -105,7 +105,13 @@
             while (date >= AFTER) {
                 console.log('fetch page', page)
                 $loading.textContent = `fetching page ${page}, total events = ${events.length}`
-                const slice = await fetch_events(USERNAME, TOKEN, page++)
+                let slice
+                try {
+                    slice = await fetch_events(USERNAME, TOKEN, page++)
+                } catch (e) {
+                    console.warn(e)
+                    break
+                }
                 for (const event of slice) {
                     date = event.created_at.slice(0, 10)
                     if (date >= AFTER) {
