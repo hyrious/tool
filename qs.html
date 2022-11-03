@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Query String Editor</title>
+    <style>
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .flex-1 {
+            flex: 1;
+        }
+        .error {
+            margin: 8px 0;
+            background-color: rgba(255, 0, 0, 0.2);
+        }
+        .error label {
+            padding: 3px 6px;
+            font-weight: bold;
+        }
+        .error p {
+            margin: 0;
+            padding: 6px 0;
+        }
+        .grid {
+            display: grid;
+            gap: 6px;
+            margin: 8px 0;
+            grid-template-columns: auto 1fr auto;
+        }
+        .grid input {
+            font-family: monospace;
+            font-size: 1rem;
+        }
+        .grid input:disabled {
+            border-bottom-style: dashed;
+        }
+        hr {
+            opacity: 0.25;
+        }
+        textarea {
+            display: block;
+            padding: .5rem;
+            background-color: transparent;
+            font-family: monospace;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Query String Editor</h1>
+    <section>
+        <div class="row">
+            <label for="$url"><samp>URL</samp> <samp>=</samp></label>
+            <textarea id="$url" readonly class="flex-1" autocomplete="off"></textarea>
+            <button onclick="navigator.clipboard.writeText($url.value)">COPY</button>
+        </div>
+        <div id="$error_overlay" class="row error" style="display: none;">
+            <label for="$error">ERROR</label>
+            <p id="$error">lorem ipsum dolo sit amet</p>
+        </div>
+        <hr>
+        <div id="$grid" class="grid"></div>
+    </section>
+    <script type="module">
+        import { For, createSignal, createEffect } from "https://esm.sh/solid-js@1.6.1"
+        import { render } from "https://esm.sh/solid-js@1.6.1/web"
+        import html from "https://esm.sh/solid-js@1.6.1/html"
+
+        const url$ = createSignal(location.href)
+        const entries$ = createSignal([])
+
+        function init() {
+            try {
+                let url = new URL(location.hash.slice(1))
+                let entries = []
+                for (let key of url.searchParams.keys()) {
+                    let value = url.searchParams.get(key)
+                    entries.push({ key, value })
+                }
+                entries$[1](entries)
+                url$[1](url)
+            } catch {}
+        }
+        init()
+
+        createEffect(() => {
+            let url = new URL(url$[0]())
+            url.search = ''
+            for (let { key, value } of entries$[0]()) {
+                url.searchParams.set(key, value)
+            }
+            url$[1](url.toString())
+        })
+
+        createEffect(() => {
+            location.hash = '#' + ($url.value = url$[0]())
+        })
+
+        function App() {
+            function updateKey(i, e) {
+                let array = entries$[0]().slice()
+                array[i].key = e.target.value
+                entries$[1](array)
+            }
+
+            function updateValue(i, e) {
+                let array = entries$[0]().slice()
+                array[i].value = e.target.value
+                entries$[1](array)
+            }
+
+            function deleteEntry(i) {
+                let array = entries$[0]().slice()
+                array.splice(i, 1)
+                entries$[1](array)
+            }
+
+            function addEntry() {
+                let array = entries$[0]().slice()
+                array.push({ key: '', value: '' })
+                entries$[1](array)
+            }
+
+            return html`<>
+                <${For} each=${entries$[0]}>
+                    ${(entry, i) => html`
+                        <input data-index=${i} data-key="1" value=${entry.key} onInput=${(e) => updateKey(i(), e)}>
+                        <input data-index=${i} data-value="1" value=${entry.value} onInput=${(e) => updateValue(i(), e)}>
+                        <button data-index=${i} data-del="1" onClick=${() => deleteEntry(i())}>delete</button>
+                    `}
+                <//>
+                <button id="$add" onClick=${addEntry} style="grid-column: 1 / span 3;">add</button>
+            </>`;
+        }
+
+        render(App, $grid)
+    </script>
+</body>
+</html>
