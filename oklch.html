@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>OKLCH Toolbox</title>
+    <style>
+        p, .header, .playground, .controls, .output, .palette {
+            max-width: 90%;
+            margin: 0 auto;
+            line-height: 1.5;
+        }
+        .header {
+            display: flex;
+            padding: 1rem 0 0.5rem;
+        }
+        .splitter {
+            flex: 1;
+        }
+        .stepper, .grey {
+            padding-left: 1rem;
+        }
+        .grey {
+            padding-right: 1rem;
+        }
+        .buttons {
+            display: inline-flex;
+        }
+        .buttons > * {
+            margin: 0;
+            border: 0;
+            padding: 2px 8px;
+            background-color: var(--control);
+        }
+        .buttons > .active {
+            color: var(--link);
+        }
+        .btn-light {
+            border-top-left-radius: 6px;
+            border-bottom-left-radius: 6px;
+            border-right: 1px solid var(--control);
+        }
+        .btn-dark {
+            border-top-right-radius: 6px;
+            border-bottom-right-radius: 6px;
+        }
+        .playground {
+            color-scheme: light;
+            background: #fff;
+            color: initial;
+            padding: 1rem;
+        }
+        .playground.dark {
+            color-scheme: dark;
+            background: #000;
+        }
+        .example {
+            padding: 1rem;
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 0 0.5rem;
+            padding: 0.5rem 0;
+        }
+        .controls label {
+            font-family: monospace;
+            font-size: 1rem;
+        }
+        .controls samp {
+            width: 5ch;
+        }
+        .item {
+            font-family: monospace;
+            font-size: 1rem;
+            padding: 1rem;
+        }
+        .grayscale {
+            filter: grayscale(1);
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">OKLCH Toolbox</h1>
+    <p>Hint: use <code>culori</code> in the browser console to explore more.</p>
+
+    <div class="header">
+        <samp id="$rgb"></samp>
+        <div class="splitter"></div>
+        <div id="$themeBtns" class="buttons">
+            <button class="btn-light active">Light</button>
+            <button class="btn-dark">Dark</button>
+        </div>
+        <div id="$stepper" class="stepper">
+            <span>Generate Palette by <samp>360deg /</samp></span>
+            <button>2</button>
+            <button>3</button>
+            <button>4</button>
+            <button>5</button>
+            <button>6</button>
+            <button>7</button>
+            <button>8</button>
+            <button>9</button>
+        </div>
+        <div class="grey">
+            <input id="$grey" type="checkbox">
+            <label for="$grey">grayscale</label>
+        </div>
+        <button id="$rand">RANDOM</button>
+    </div>
+
+    <div id="$playground" class="playground">
+        <span id="$bg" class="example">
+            Lorem ipsum
+        </span>
+        <span id="$fg" class="example">
+            dolo sit amet
+        </span>
+    </div>
+
+    <div id="$lch" class="controls">
+        <label for="$L">L</label>
+        <input id="$L" type="range" min="0" max="100" step="0.1" value="40.1" oninput="$Lo.textContent=$L.value+'%'">
+        <samp id="$Lo">40.1%</samp>
+        <label for="$C">C</label>
+        <input id="$C" type="range" min="0" max="0.4" step="0.001" value="0.123" oninput="$Co.textContent=$C.value">
+        <samp id="$Co">0.123</samp>
+        <label for="$H">H</label>
+        <input id="$H" type="range" min="0" max="360" step="0.1" value="21.57" oninput="$Ho.textContent=$H.value">
+        <samp id="$Ho">21.57</samp>
+    </div>
+
+    <div id="$palette" class="palette"></div>
+
+    <script type="module">
+        const $ = s => document.querySelector(s)
+
+        let dark = false
+        $themeBtns.onclick = function toggleTheme() {
+            dark = !dark
+            $('.btn-light').classList.toggle('active', !dark)
+            $('.btn-dark').classList.toggle('active', dark)
+            $playground.classList.toggle('dark', dark)
+        }
+
+        import * as culori from 'https://esm.sh/culori@2.0.3'
+        console.log('culori =', globalThis.culori = culori)
+
+        function get_color() {
+            return {
+                mode: 'oklch',
+                l: +$L.value / 100,
+                c: +$C.value,
+                h: +$H.value,
+            }
+        }
+
+        function get_hex(color = get_color()) {
+            return culori.formatHex(color)
+        }
+
+        function update() {
+            let hex = get_hex()
+            $rgb.textContent = hex
+            $bg.style.background = hex
+            $fg.style.color = hex
+        }
+        update()
+
+        $lch.oninput = update
+
+        $stepper.onclick = function generate(e) {
+            const N = +e.target.textContent
+            if (Number.isInteger(N) && N > 0) {
+                const step = 360 / N
+                const base = get_color()
+                const palette = Array.from({ length: N }, (_, i) => ({ ...base, h: (base.h + step * i) % 360 }))
+                $palette.innerHTML = ''
+                let ret = ''
+                for (const color of palette) {
+                    const hex = get_hex(color)
+                    ret += `<div class="item" style="background:${hex}">${hex}</div>`
+                }
+                $palette.innerHTML = ret
+            }
+        }
+
+        $grey.oninput = function grayscale() {
+            $palette.classList.toggle('grayscale', this.checked)
+        }
+
+        function rand_range(input) {
+            input.value = Math.random() * (input.max - input.min) + +input.min
+            input.oninput()
+        }
+
+        $rand.onclick = function rand() {
+            rand_range($L)
+            rand_range($C)
+            rand_range($H)
+            update()
+        }
+    </script>
+</body>
+</html>
