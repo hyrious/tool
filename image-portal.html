@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Image Portal</title>
+    <style>
+        .description {
+            max-width: 90%;
+            margin: 0 auto 0.5rem;
+            line-height: 1.5;
+        }
+        .description > ol {
+            max-width: 90%;
+        }
+        .description > code, .description > kbd {
+            outline: 1px solid;
+            padding: 0 0.5ch;
+        }
+        .drop-area {
+            max-width: 90%;
+            margin: 0 auto;
+            border: 1px dashed;
+            border-radius: 6px;
+            height: 65vh;
+            position: relative;
+        }
+        .drop-area > p {
+            margin: 0;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .preview {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+        }
+        .preview > img {
+            max-width: 80%;
+            max-height: 80%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .hint {
+            position: fixed;
+            left: 0; bottom: 0; width: 100%;
+            text-align: center;
+        }
+        .btn-close {
+            position: absolute;
+            top: 12px; right: 12px;
+            font-size: 0;
+            background: transparent;
+            border: 0;
+            border-radius: 50%;
+            padding: 12px;
+            transition: background .3s;
+            cursor: pointer;
+        }
+        .btn-close:hover {
+            background: rgba(127, 127, 127, 0.5);
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Image Portal</h1>
+
+    <p class="description">
+        Why? Because Telegram on macOS stores images with <code>/</code> in their names,
+        which prevents the image being drag-dropped to QQ.<br>
+        With this portal page, one can easily copy an image from Telegram to QQ via:<br>
+        1) Drop image here, 2) paste in QQ with <kbd>Command+V</kbd>.
+    </p>
+
+    <div id="$img" class="drop-area">
+        <p>Drag & drop an image here.</p>
+    </div>
+
+    <div id="$preview_div" class="preview hidden">
+        <img id="$preview" src="">
+        <p class="hint">
+            Image has been copied to clipboard.<br>
+            If not, you can manually right click the image to copy it.
+        </p>
+        <button id="$close" class="btn-close" title="close">
+            <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--material-symbols" width="32" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><path fill="#fff" d="M6.4 19L5 17.6l5.6-5.6L5 6.4L6.4 5l5.6 5.6L17.6 5L19 6.4L13.4 12l5.6 5.6l-1.4 1.4l-5.6-5.6Z"></path></svg>
+        </button>
+    </div>
+
+    <script type="module">
+        $img.ondragover = $preview_div.ondragover = function on_dragover(ev) {
+            ev.preventDefault()
+            $img.classList.add('active')
+        }
+        $img.ondrop = $preview_div.ondrop = function on_drop(ev) {
+            ev.preventDefault()
+            $img.classList.remove('active')
+            load(ev.dataTransfer.files[0])
+        }
+        $close.onclick = function close() {
+            $preview_div.classList.add('hidden')
+        }
+        async function load(file) {
+            if (!file) return;
+            $preview_div.classList.remove('hidden')
+
+            let resolve, p
+            p = new Promise(r => resolve = r)
+            $preview.onload = resolve
+            $preview.src = URL.createObjectURL(file)
+            try {
+                await p
+                const data = [new ClipboardItem({ [file.type]: file })]
+                await navigator.clipboard.write(data)
+                return
+            }
+            // Not supported image format, try canvas
+            catch (error) { console.warn(error) }
+
+            const canvas = document.createElement('canvas')
+            const width  = canvas.width  = $preview.width
+            const height = canvas.height = $preview.height
+            const ctx = canvas.getContext('2d')
+            ctx.drawImage($preview, 0, 0, width, height)
+
+            canvas.toBlob(async blob => {
+                if (!blob) throw new Error('canvas.toBlob() failed');
+
+                const data = [new ClipboardItem({ [blob.type]: blob })]
+                await navigator.clipboard.write(data)
+
+                // Fix the preview image, since we do not support GIF
+                URL.revokeObjectURL($preview.src)
+                $preview.src = URL.createObjectURL(blob)
+            }, 'image/png', 1)
+        }
+    </script>
+</body>
+</html>
