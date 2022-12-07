@@ -88,16 +88,35 @@
                         updateFrame()
                     }
 
+                    // Disposal: how to dispose current frame
+                    // 0 - clear before draw next frame
+                    // 1 - leave it as is (do nothing)
+                    // 2 - restore background
+                    // 3 - restore to nearest frame with disposal=1 (deprecated)
+
                     (async () => {
-                        let last
+                        let last, last_disposal = 1
                         for (let i = 0; i < cached.length; ++i) {
                             const pixels = ctx.createImageData(gr.width, gr.height)
                             const info = gr.frameInfo(i)
-                            if (info.disposal !== 2) {
+
+                            /**/ if (last_disposal === 0) {
+                                // yep, pixels is already cleared
+                            }
+                            else if (last_disposal === 1) {
+                                // copy previous frame
                                 last && pixels.data.set(last.data)
                             }
+                            else if (last_disposal === 2) {
+                                // restore background, here we just do nothing
+                            }
+                            else if (last_disposal === 3) {
+                                console.warn('[disposal = 3] is not supported', info)
+                            }
+
                             gr.decodeAndBlitFrameRGBA(i, pixels.data)
                             last = cached[i] = pixels
+                            last_disposal = info.disposal
                             progress.value = progress.max = i
                             refresh()
                             await new Promise(requestAnimationFrame)
