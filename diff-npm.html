@@ -7,13 +7,20 @@
   <title>𝚍𝚒𝚏𝚏 -𝚞 𝚗𝚙𝚖/&hellip;</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: monospace; margin: 8px; line-height: 1.5; }
+    html { height: 100% }
+    body { font-family: monospace; margin: 0; line-height: 1.5; height: 100% }
     label { user-select: none; -webkit-user-select: none; }
-    #app { white-space: pre; line-height: 2; }
+    #app { white-space: pre; line-height: 1; padding: 8px }
     #main { width: 80vw; }
     #preview { margin: 0; }
-    #form { display: grid; align-items: center; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 4px 0; }
+    #paint { position: absolute; inset: 0; z-index: 100; font-size: 0 }
+    #form { display: grid; align-items: center; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 12px 8px; }
+    #return { background: #fff; padding: 4px 8px; z-index: 200 }
+    #diff { padding: 8px }
     .hljs { background: none !important; }
+    .diff-row { font-family: Menlo,Consolas,monospace; font-size: 13px; line-height: 22px; white-space: pre-line }
+    .diff-row > span { display: block }
+    .diff-row .d2h-code-line { white-space: pre !important; user-select: text }
   </style>
 </head>
 <body>
@@ -34,7 +41,8 @@
     </div>
     <button id="btn">submit</button>
   </div>
-  <div id="diff"></div>
+  <div id="diff" style="display: none"></div>
+  <div id="paint" style="display: none"></div>
   <script>
     String.prototype.at ||= function (index) {
       return this[index < 0 ? this.length + index : index]
@@ -48,10 +56,22 @@
       app.textContent += app.textContent.at(-1)
     }, 1000)
   </script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.17/bundles/css/diff2html.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.5.1/build/styles/github.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.17/bundles/js/diff2html-ui-slim.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/google/diff-match-patch/javascript/diff_match_patch.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.22/bundles/css/diff2html.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.7.0/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.22/bundles/js/diff2html-ui-slim.min.js"></script>
+  <script id="dmp_script" src="https://cdn.jsdelivr.net/gh/google/diff-match-patch/javascript/diff_match_patch.js"></script>
+  <script id="worker" type="text/worker">
+    importScripts("__DMP_SRC__")
+    onmessage = function ({ data }) {
+      const { id, a: text_a, b: text_b } = data
+      const dmp = new diff_match_patch()
+      const info = dmp.diff_linesToChars_(text_a, text_b)
+      const diffs = dmp.diff_main(info.chars1, info.chars2, false)
+      dmp.diff_charsToLines_(diffs, info.lineArray)
+      postMessage({ id, diffs })
+    }
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.7.0/highlight.min.js"></script>
   <script>
     clearInterval(timer)
     work(Object.fromEntries(new URLSearchParams(location.search))).catch(error)
@@ -60,27 +80,69 @@
       var { a, b } = search
       if (!a || !b) return fail();
       app.textContent = `resolving ${a}, ${b} ...`
+      console.time('resolve')
       var fetch_a = fetch(`https://cdn.jsdelivr.net/npm/${a}`)
       var fetch_b = fetch(`https://cdn.jsdelivr.net/npm/${b}`)
       var text_a = await go(fetch_a)
       var text_b = await go(fetch_b)
+      console.timeEnd('resolve')
 
-      var dmp = new diff_match_patch()
-      var info = dmp.diff_linesToChars_(text_a, text_b)
-      var diffs = dmp.diff_main(info.chars1, info.chars2, false)
-      dmp.diff_charsToLines_(diffs, info.lineArray)
+      var workers = Array.from({ length: navigator.hardwareConcurrency || 1 }, () => new Worker(
+        URL.createObjectURL(new Blob(
+          [worker.textContent.replace('__DMP_SRC__', dmp_script.src)],
+          { type: 'application/javascript' }
+        ))
+      ))
+      var id_ = 0, tasks = new Map()
+      function receive({ data }) {
+        const { id, diffs } = data
+        const task = tasks.get(id)
+        if (task) task(diffs), tasks.delete(id);
+      }
+      workers.forEach(worker => { worker.onmessage = receive })
+      function spawn_worker(a, b) {
+        const id = id_++
+        const worker = workers[id % workers.length]
+        return new Promise(r => {
+          tasks.set(id, r)
+          worker.postMessage({ id, a, b })
+        })
+      }
 
-      app.textContent = ''
+      console.time('diff')
+      var a_lines = text_a.split('\n')
+      var b_lines = text_b.split('\n')
+      var splits = split_rec(a_lines, b_lines)
+      console.log('diff: split into %d chunks and run in %d workers', splits.length + 1, workers.length)
+      var p_tasks = [], i = 0, j = 0
+      for (const [x, y] of splits) {
+        p_tasks.push(spawn_worker(
+          a_lines.slice(i, x).join('\n') + '\n',
+          b_lines.slice(j, y).join('\n') + '\n',
+        ))
+        i = x
+        j = y
+      }
+      p_tasks.push(spawn_worker(
+        a_lines.slice(i).join('\n') + '\n',
+        b_lines.slice(j).join('\n') + '\n',
+      ))
+      var diffs = await Promise.all(p_tasks).then(arr => arr.flat())
+      console.timeEnd('diff')
+      window.diffs = diffs
+
+      var text = app.textContent = ''
       var prefix = { [-1]: '-', 0: ' ', 1: '+' }
       for (var diff of diffs) {
-        app.appendChild(document.createTextNode(map(prefix[diff[0]], diff[1])))
+        text += map(prefix[diff[0]], diff[1])
       }
       // Now we got app.textContent = `+xxx\n-yyy\n not change`,
       // we are going to convert that to unified diff format.
 
-      var lines = app.textContent.split('\n')
+      var lines = text.split('\n')
+      window.lines = lines
       var i = 0, m = 0, n = 0
-      var line_numbers = []
+      var line_numbers = [] // ['+', a_index, b_index, is_fold?][]
       for (var line of lines) {
         if (line[0] === ' ') {
           m++, n++
@@ -92,6 +154,7 @@
         line_numbers[i] = [line[0], m, n]
         i++
       }
+      window.line_numbers = line_numbers
 
       // s = fold unchanged lines
       if (search.s) {
@@ -114,7 +177,7 @@
           }
           chunks.at(-1).push([i, line])
         }
-        app.textContent = `--- ${a}\n+++ ${b}\n`
+        text = `--- ${a}\n+++ ${b}\n`
         for (var i = 0; i < chunks.length; i += 2) {
           var [diff, foldded] = chunks.slice(i, i + 2)
           if (diff.length === 0) continue
@@ -128,22 +191,189 @@
             if (d === '+') q++;
             if (d === '-') p++;
           }
-          app.appendChild(document.createTextNode(`@@ -${ln_a},${p} +${ln_b},${q} @@\n${display.join('\n')}\n`))
+          text += `@@ -${ln_a},${p} +${ln_b},${q} @@\n${display.join('\n')}\n`
         }
       } else {
         // Don't fold, we only has to answer how many '-' and '+'
-        app.insertBefore(document.createTextNode(`--- ${a}\n+++ ${b}\n@@ -1,${m} +1,${n} @@\n`), app.firstChild)
+        text = `--- ${a}\n+++ ${b}\n@@ -1,${m} +1,${n} @@\n` + text
       }
 
       app.style.display = 'none'
       $('#return').style.display = ''
       $('#return a').href = location.pathname
-      var ui = new Diff2HtmlUI($('#diff'), app.textContent, {
-        drawFileList: false,
-        outputFormat: search.f === 's' ? 'side-by-side' : 'line-by-line',
-      })
-      ui.draw()
-      ui.highlightCode()
+
+      var raw_lines = text.split('\n')
+      if (raw_lines.length < 4000) {
+        console.time('diff2html')
+        var ui = new Diff2HtmlUI($('#diff'), text, {
+          drawFileList: false,
+          outputFormat: search.f === 's' ? 'side-by-side' : 'line-by-line',
+        })
+        ui.draw()
+        ui.highlightCode()
+        console.timeEnd('diff2html')
+
+        $('#diff').style.display = ''
+      }
+
+      else {
+        console.log('rendering diff (%d lines) ...', raw_lines.length)
+        window.raw_lines = raw_lines
+
+        // Because we always diff 1 file, there must only be one diff hunk
+        if (!(raw_lines[0].startsWith('--- ') && raw_lines[1].startsWith('+++ '))) {
+          app.textContent = 'Failed to parse diff!'
+          app.style.display = ''
+          return
+        }
+
+        $('#paint').style.display = ''
+
+        const from = raw_lines.shift().slice(4)
+        const to   = raw_lines.shift().slice(4)
+        let filename = to
+        if (from !== to) {
+          const prefix = [], suffix = []
+          const olds = from.split('/'), news = to.split('/')
+          let i = 0, j = olds.length -1, k = news.length - 1
+          while (i < j && i < k) {
+            if (olds[i] === news[i]) {
+              prefix.push(news[i])
+              ++i
+            } else break
+          }
+          while (j > i && k > i) {
+            if (olds[j] === news[k]) {
+              suffix.unshift(news[k])
+              --j, --k
+            } else break
+          }
+          const f = olds.slice(i, j + 1).join('/')
+          const t = news.slice(i, k + 1).join('/')
+          if (prefix.length && suffix.length) {
+            filename = prefix.join('/') + '/{' + f + ' → ' + t + '}/' + suffix.join('/')
+          } else if (prefix.length) {
+            filename = prefix.join('/') + '/{' + f + ' → ' + t + '}'
+          } else if (suffix.length) {
+            filename = '{' + f + ' → ' + t + '}/' + suffix.join('/')
+          } else {
+            filename = from + ' → ' + t
+          }
+        }
+
+        paint.style.padding = '30px 8px 8px'
+
+        const file = document.createElement('div')
+        file.className = 'd2h-file-wrapper'
+        file.style.width = '100%'
+        file.style.height = '100%'
+        paint.appendChild(file)
+
+        const header = document.createElement('div')
+        header.className = 'd2h-file-header'
+        header.innerHTML = `<span class="d2h-file-name-wrapper"><span class="d2h-file-name">${filename}</span></span>`
+        file.appendChild(header)
+
+        const diff_wrapper = document.createElement('div')
+        diff_wrapper.className = 'd2h-file-diff'
+        diff_wrapper.style.overflowY = 'auto'
+        file.appendChild(diff_wrapper)
+
+        const viewport = document.createElement('div')
+        viewport.style.cssText = `
+          overflow: hidden;
+          will-change: transform;
+          position: relative;
+        `
+        diff_wrapper.appendChild(viewport)
+
+        const diff_window = document.createElement('div')
+        diff_window.style.willChange = 'transform'
+        viewport.appendChild(diff_window)
+
+
+        function renderRow(line, raw_index) {
+          const row = document.createElement('div')
+          row.dataset.i = raw_index
+          row.className = 'diff-row'
+          if (line.startsWith('@@')) {
+            const ln = document.createElement('span')
+            ln.className = 'd2h-code-linenumber d2h-info'
+            row.appendChild(ln)
+            const text = document.createElement('span')
+            text.className = 'd2h-info'
+            text.innerHTML = `<div class="d2h-code-line">${line}</div>`
+            row.appendChild(text)
+          } else {
+            let i = raw_index, p, q, d
+            while (i && !raw_lines[--i].startsWith('@@'))
+              ;
+            const chunk = raw_lines[i]
+            const [, a_cursor, b_cursor] = chunk.split(' ')
+            const [a_from] = a_cursor.slice(1).split(',').map(e => parseInt(e))
+            const [b_from] = b_cursor.slice(1).split(',').map(e => parseInt(e))
+            for (p = a_from, q = b_from; i < raw_index; ++i) {
+              d = raw_lines[i][0]
+              if (d === ' ') p++, q++;
+              if (d === '+') q++;
+              if (d === '-') p++;
+            }
+            d = raw_lines[i][0]
+            const ln = document.createElement('span')
+            const c = { ' ': 'd2h-cntx', '-': 'd2h-del d2h-change', '+': 'd2h-ins d2h-change' }[d]
+            ln.className = 'd2h-code-linenumber ' + c
+            if (d === '+') p = '';
+            if (d === '-') q = '';
+            ln.innerHTML = `<div class="line-num1">${p}</div><div class="line-num2">${q}</div>`
+            row.appendChild(ln)
+            const text = document.createElement('span')
+            text.className = c
+            text.innerHTML = `<div class="d2h-code-line">${line}</div>`
+            row.appendChild(text)
+          }
+          return row
+        }
+
+        const lineHeight = 22
+        const ghostCount = 10
+        let visibleHeight = 0
+
+        let last = { totalHeight: 0, startNode: -1, visibleNodeCount: 0 }
+
+        diff_wrapper.onscroll = () => {
+          const { scrollTop } = diff_wrapper
+          const itemCount = raw_lines.length
+          const totalHeight = itemCount * lineHeight
+
+          const startNode = Math.max(0, Math.floor(scrollTop / lineHeight) - ghostCount)
+          const visibleNodeCount = Math.min(itemCount - startNode, Math.ceil(visibleHeight / lineHeight) + 2 * ghostCount)
+
+          const offsetY = startNode * lineHeight
+
+          if (last.totalHeight !== totalHeight) {
+            viewport.style.height = totalHeight + 'px'
+          }
+          diff_window.style.transform = `translateY(${offsetY}px)`
+          if (last.startNode !== startNode || last.visibleNodeCount !== visibleNodeCount) {
+            last.startNode        = startNode
+            last.visibleNodeCount = visibleNodeCount
+            diff_window.innerHTML = ''
+            let offset = 0
+            for (const line of raw_lines.slice(startNode, startNode + visibleNodeCount)) {
+              diff_window.appendChild(renderRow(line, startNode + offset))
+              offset++
+            }
+            refresh_syntax_highlight(startNode, visibleNodeCount)
+          }
+        }
+
+        onresize = () => {
+          visibleHeight = file.clientHeight - 35
+          diff_wrapper.style.height = visibleHeight + 'px'
+          diff_wrapper.onscroll()
+        }
+        onresize()
+      }
     }
     function map(prefix, text) {
       var arr = text.split('\n').map(e => prefix + e)
@@ -181,6 +411,101 @@
           f: $('#fs').checked ? 's' : ''
         })
       }
+    }
+    function count_lines(a) {
+      const count = new Map()
+      for (let i = a.length - 1; i >= 0; i--) {
+        const line = a[i]
+        const counter = count.get(line)
+        if (counter) {
+          counter[0]++
+          counter[1] = i
+        } else {
+          count.set(line, [1, i])
+        }
+      }
+      return count
+    }
+    function split(a, b) {
+      const a_lines = count_lines(a)
+      const b_lines = count_lines(b)
+
+      let min_count = 114514
+      let max_length = 0
+      let split_at
+
+      for (const line of a_lines.keys()) {
+        const base = a_lines.get(line)
+        const counter = b_lines.get(line) // [count, index]
+        if (counter) {
+          const count = base[0] + counter[0]
+          if (count < min_count || (count === min_count && line.length > max_length)) {
+            min_count = count
+            max_length = line.length
+            split_at = [base[1], counter[1]]
+          }
+        }
+      }
+
+      return split_at
+    }
+    const MAX_LINES = 10000
+    function split_rec(a, b, i = 0, j = 0) {
+      if (a.length < MAX_LINES && b.length < MAX_LINES) {
+        return []
+      }
+      const split_at = split(a, b)
+      if (split_at) {
+        const [x, y] = split_at
+        const ret = split_rec(a.slice(0, x), b.slice(0, y), i, j)
+        ret.push([i + x, j + y])
+        return ret.concat(split_rec(a.slice(x + 1), b.slice(y + 1), i + x + 1, j + y + 1))
+      } else {
+        return []
+      }
+    }
+    let _hljs_timer = 0
+    function refresh_syntax_highlight(start, count) {
+      clearTimeout(_hljs_timer)
+      _hljs_timer = setTimeout(_highlight, 200, start, count)
+    }
+    function _highlight(start, count) {
+      const lines = raw_lines.slice(start, start + count)
+      let text_a = '', text_b = ''
+      for (const e of lines) {
+        if (e[0] === ' ' || e[0] === '-') text_a += e.slice(1) + '\n'
+        else                              text_a += '\n'
+        if (e[0] === ' ' || e[0] === '+') text_b += e.slice(1) + '\n'
+        else                              text_b += '\n'
+      }
+
+      let rows_a = _get_highlighted_lines(text_a)
+      let rows_b = _get_highlighted_lines(text_b)
+      if (text_a && !rows_a || text_b && !rows_b) return;
+
+      // Let's merge rows_a and rows_b, by inserting '+' lines from rows_b into rows_a
+      let rows = rows_a.slice()
+      for (let i = 0; i < count; ++i) {
+        if (lines[i][0] === '+') {
+          rows[i] = rows_b[i]
+        }
+      }
+
+      const $$ = document.querySelectorAll('.d2h-code-line')
+      for (let i = $$.length - 1; i >= 0; --i) {
+        const $ = $$[i], span = rows[i]
+        if (!span) return
+        if ($.textContent[0] !== '@' || span !== '<span class="hljs-comment"></span>') {
+          $.innerHTML = $.textContent[0] + span
+        }
+      }
+    }
+    hljs.configure({ ignoreIllegals: true })
+    function _get_highlighted_lines(code) {
+      let html = hljs.highlightAuto(code).value
+      if (!html) return html
+      html = html.replace(/<span class="hljs-comment">(.|\n)*?<\/span>/g, (data) => data.replace(/\r?\n/g, `</span>\n<span class="hljs-comment">`))
+      return html.split(/\r?\n/)
     }
   </script>
 </body>
