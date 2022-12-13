@@ -11,15 +11,15 @@
     body { font-family: monospace; margin: 0; line-height: 1.5; height: 100% }
     label { user-select: none; -webkit-user-select: none; }
     #app { white-space: pre; line-height: 1; padding: 8px }
-    #main { width: 80vw; }
+    #main { width: 80vw; padding: 8px }
     #preview { margin: 0; }
-    #paint { position: absolute; inset: 0; z-index: 100; font-size: 0 }
+    #paint { position: absolute; top: 30px; left: 8px; right: 8px; bottom: 8px; z-index: 100; font-size: 0 }
     #form { display: grid; align-items: center; grid-template-columns: auto 1fr; gap: 4px 8px; padding: 12px 8px; }
-    #return { background: #fff; padding: 4px 8px; z-index: 200 }
+    #return { background: #fff; padding: 8px; z-index: 200 }
     #diff { padding: 8px }
     .hljs { background: none !important; }
-    .diff-row { font-family: Menlo,Consolas,monospace; font-size: 13px; line-height: 22px; white-space: pre-line }
-    .diff-row > span { display: block }
+    .diff-row { font-family: Menlo,Consolas,monospace; font-size: 13px; height: 22px; white-space: pre-line }
+    .diff-row > span { display: block; height: 100% }
     .diff-row .d2h-code-line { white-space: pre !important; user-select: text }
   </style>
 </head>
@@ -261,8 +261,6 @@
           }
         }
 
-        paint.style.padding = '30px 8px 8px'
-
         const file = document.createElement('div')
         file.className = 'd2h-file-wrapper'
         file.style.width = '100%'
@@ -291,8 +289,10 @@
         diff_window.style.willChange = 'transform'
         viewport.appendChild(diff_window)
 
-
+        var cacheRow = new Map()
         function renderRow(line, raw_index) {
+          const cache = cacheRow.get(raw_index)
+          if (cache) return cache;
           const row = document.createElement('div')
           row.dataset.i = raw_index
           row.className = 'diff-row'
@@ -324,13 +324,14 @@
             ln.className = 'd2h-code-linenumber ' + c
             if (d === '+') p = '';
             if (d === '-') q = '';
-            ln.innerHTML = `<div class="line-num1">${p}</div><div class="line-num2">${q}</div>`
+            ln.innerHTML = `<div class="line-num1" title="${p}">${p}</div><div class="line-num2" title="${q}">${q}</div>`
             row.appendChild(ln)
             const text = document.createElement('span')
             text.className = c
             text.innerHTML = `<div class="d2h-code-line">${line}</div>`
             row.appendChild(text)
           }
+          cacheRow.set(raw_index, row)
           return row
         }
 
@@ -363,7 +364,7 @@
               diff_window.appendChild(renderRow(line, startNode + offset))
               offset++
             }
-            refresh_syntax_highlight(startNode, visibleNodeCount)
+            refresh_syntax_highlight(startNode, visibleNodeCount, search)
           }
         }
 
@@ -465,47 +466,54 @@
       }
     }
     let _hljs_timer = 0
-    function refresh_syntax_highlight(start, count) {
+    function refresh_syntax_highlight(start, count, search) {
       clearTimeout(_hljs_timer)
-      _hljs_timer = setTimeout(_highlight, 200, start, count)
-    }
-    function _highlight(start, count) {
-      const lines = raw_lines.slice(start, start + count)
-      let text_a = '', text_b = ''
-      for (const e of lines) {
-        if (e[0] === ' ' || e[0] === '-') text_a += e.slice(1) + '\n'
-        else                              text_a += '\n'
-        if (e[0] === ' ' || e[0] === '+') text_b += e.slice(1) + '\n'
-        else                              text_b += '\n'
-      }
-
-      let rows_a = _get_highlighted_lines(text_a)
-      let rows_b = _get_highlighted_lines(text_b)
-      if (text_a && !rows_a || text_b && !rows_b) return;
-
-      // Let's merge rows_a and rows_b, by inserting '+' lines from rows_b into rows_a
-      let rows = rows_a.slice()
-      for (let i = 0; i < count; ++i) {
-        if (lines[i][0] === '+') {
-          rows[i] = rows_b[i]
-        }
-      }
-
-      const $$ = document.querySelectorAll('.d2h-code-line')
-      for (let i = $$.length - 1; i >= 0; --i) {
-        const $ = $$[i], span = rows[i]
-        if (!span) return
-        if ($.textContent[0] !== '@' || span !== '<span class="hljs-comment"></span>') {
-          $.innerHTML = $.textContent[0] + span
-        }
-      }
+      _hljs_timer = setTimeout(_highlight, 200, start, count, search)
     }
     hljs.configure({ ignoreIllegals: true })
-    function _get_highlighted_lines(code) {
-      let html = hljs.highlightAuto(code).value
-      if (!html) return html
-      html = html.replace(/<span class="hljs-comment">(.|\n)*?<\/span>/g, (data) => data.replace(/\r?\n/g, `</span>\n<span class="hljs-comment">`))
-      return html.split(/\r?\n/)
+    function _highlight(start, count, search) {
+      const ext = search.a.split('.').pop()
+      const language = {
+        js: 'javascript',
+        jsx: 'javascript',
+        mjs: 'javascript',
+        json: 'json',
+        css: 'css',
+        ts: 'typescript',
+        tsx: 'typescript',
+        yml: 'yaml',
+        yaml: 'yaml',
+        md: 'markdown',
+      }[ext.toLowerCase()] || 'js'
+      const lines = raw_lines.slice(start, start + count)
+      const $$ = document.querySelectorAll('.d2h-code-line')
+      for (let i = $$.length - 1; i >= 0; --i) {
+        const $ = $$[i], line = lines[i]
+        if (!line || line[0] === '@') continue;
+        const prefix = line[0], code = line.slice(1)
+        const result = closeTags(hljs.highlight(code, { language, ignoreIllegals: true }).value)
+        $.innerHTML = `<span class="d2h-code-line-prefix">${prefix === ' ' ? '&nbsp;' : prefix}</span><span class="d2h-code-line-ctn hljs ${language}">${result}</span>`
+      }
+    }
+    // https://github.com/hexojs/hexo-util/blob/979873b63a725377c2bd6ad834d790023496130d/lib/highlight.js#L123
+    function closeTags(value) {
+      const tokenStack = [];
+
+      value = value
+        .split('\n')
+        .map(line => {
+          const prepend = tokenStack.map(token => `<span class="${token}">`).join('');
+          const matches = line.matchAll(/(<span class="(.*?)">|<\/span>)/g);
+          Array.from(matches).forEach(match => {
+            if (match[0] === '</span>') tokenStack.shift();
+            else tokenStack.unshift(match[2]);
+          });
+          const append = '</span>'.repeat(tokenStack.length);
+          return prepend + line + append;
+        })
+        .join('\n');
+
+      return value;
     }
   </script>
 </body>
