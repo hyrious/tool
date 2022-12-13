@@ -320,7 +320,7 @@
             }
             d = raw_lines[i][0]
             const ln = document.createElement('span')
-            const c = { ' ': 'd2h-cntx', '-': 'd2h-del d2h-change', '+': 'd2h-ins d2h-change' }[d]
+            const c = { ' ': 'd2h-cntx', '-': 'd2h-del', '+': 'd2h-ins' }[d]
             ln.className = 'd2h-code-linenumber ' + c
             if (d === '+') p = '';
             if (d === '-') q = '';
@@ -493,6 +493,178 @@
         const prefix = line[0], code = line.slice(1)
         const result = closeTags(hljs.highlight(code, { language, ignoreIllegals: true }).value)
         $.innerHTML = `<span class="d2h-code-line-prefix">${prefix === ' ' ? '&nbsp;' : prefix}</span><span class="d2h-code-line-ctn hljs ${language}">${result}</span>`
+      }
+
+      // Draw inline diffs
+      let groups = [], curr = [[], []]
+      for (let i = 0, len = $$.length, last; i < len - 1; ++i) {
+        const $ = $$[i], line = lines[i]
+        if (!line || line[0] === '@') {
+          if (curr[0].length || curr[1].length) {
+            groups.push(curr)
+            curr = [[], []]
+          }
+          continue;
+        }
+        const cl = $.parentElement.classList
+        const del = cl.contains('d2h-del'), ins = cl.contains('d2h-ins')
+        if (del) {
+          if (curr[1].length) {
+            groups.push(curr)
+            curr = [[], []]
+          }
+          curr[0].push([$, line])
+        } else if (ins) {
+          curr[1].push([$, line])
+        } else if (curr[0].length || curr[1].length) {
+          groups.push(curr)
+          curr = [[], []]
+        }
+      }
+      if (curr[0].length || curr[1].length) {
+        groups.push(curr)
+      }
+
+      for (let [del, ins] of groups) {
+        if (del.length === 0 || ins.length === 0) {
+          continue
+        }
+        const left  = del.map(e => e[1].slice(1)).join('\n')
+        const right = ins.map(e => e[1].slice(1)).join('\n')
+        let dmp = new diff_match_patch()
+        let diff = dmp.diff_main(left, right)
+        dmp.diff_cleanupSemantic(diff)
+        _highlight_inline(del, ins, diff)
+      }
+    }
+    function _highlight_inline(del, ins, diff) {
+      // del, ins: [$.d2h-code-line, line][], line = '+  hello, world!'
+      // diff = {0: -1 | 0| +1, 1: 'hello, world!'}[]
+      let i = 0, j = 0, k = 0, l = 0, ls, from, marks = [] // del[i][k], ins[j][l]
+      for (let a of diff) {
+        switch (a[0]) {
+          case  0: {               // skip
+            ls = a[1].split('\n')  // lines
+            if (ls.length > 1) {
+              i += ls.length - 1
+              j += ls.length - 1
+              ls = ls[ls.length - 1]
+              k = l = ls.length
+            } else {
+              k += ls[0].length
+              l += ls[0].length
+            }
+            break
+          }
+          case -1: { // del
+            from = [i, k]
+            ls = a[1].split('\n')
+            if (ls.length > 1) {
+              i += ls.length - 1
+              ls = ls[ls.length - 1]
+              k = ls.length
+            } else {
+              k += ls[0].length
+            }
+            marks.push([-1, from, [i, k]])
+            break
+          }
+          case +1: { // ins
+            from = [j, l]
+            ls = a[1].split('\n')
+            if (ls.length > 1) {
+              j += ls.length - 1
+              ls = ls[ls.length - 1]
+              l = ls.length
+            } else {
+              l += ls[0].length
+            }
+            marks.push([+1, from, [j, l]])
+            break
+          }
+        }
+      }
+      // now marks = [-1 | +1, from, to][]
+      for (let [dir, [i, j], [k, l]] of marks) {
+        let group = (dir === -1 ? del : ins)
+        for (let a = i; a <= k; ++a) {
+          let el = group[a][0]
+          el.parentElement.classList.add('d2h-change')
+          el.parentElement.previousElementSibling.classList.add('d2h-change')
+        }
+        if (i === k) {
+          _highlight_inline_1(dir, group[i], j, l)
+        } else {
+          _highlight_inline_1(dir, group[i], j, Infinity)
+          while (++i < k) {
+            _highlight_inline_1(dir, group[i], 0, Infinity)
+          }
+          _highlight_inline_1(dir, group[k], 0, l)
+        }
+      }
+    }
+    function _highlight_inline_1(dir, [el, raw], i, j) {
+      el = el.children[1]
+      if (el.dataset.done) return;
+      let k = 0, seq = [], open = [], html = el.innerHTML
+      if (/<ins>|<del>/.test(html)) return;
+      for (let m of html.matchAll(/<\/?span\b/g)) { // chrome73
+        const close = m[0][1] === '/', index = m.index
+        const end = html.indexOf('>', index) + 1
+        if (k < index) {
+          seq.push(html.slice(k, index))
+        }
+        seq.push(html.slice(index, k = end))
+      }
+      if (k < html.length - 1) {
+        seq.push(html.slice(k))
+      }
+      const wrap = dir === -1 ? _wrap_del : _wrap_ins
+      let start = _seqAt(seq, i), end = _seqAt(seq, j) || Infinity
+      html =
+        fixTags(html.slice(0, start), void 0) +
+        fixTags(html.slice(start, end), wrap) +
+        fixTags(html.slice(end), void 0)
+      el.innerHTML = html
+      el.dataset.done = '1'
+    }
+    var _temp_open
+    function fixTags(html, wrap) {
+      let save = html
+      let k = 0, ret = '', open = 0, opens = []
+      for (let m of html.matchAll(/<\/?span\b/g)) {
+        const close = m[0][1] === '/', index = m.index
+        const end = html.indexOf('>', index) + 1
+        open += close ? -1 : +1
+        close ? opens.pop() : opens.push(html.slice(index, end))
+      }
+      if (open > 0) {
+        _temp_open = opens.join('')
+        html += '</span>'.repeat(open)
+      } else if (open < 0) {
+        html = _temp_open + html
+      }
+      if (html && wrap) {
+        html = wrap(html)
+      }
+      return html
+    }
+    var _wrap_ins = wrap.bind(null, '<ins>', '</ins>')
+    var _wrap_del = wrap.bind(null, '<del>', '</del>')
+    function wrap(beg, end, content) {
+      return beg + content + end
+    }
+    function _seqAt(seq, i) {
+      let j = 0, k = 0
+      if (i === 0) return 0
+      for (let a of seq) {
+        k += a.length
+        if (a[0] === '<') continue;
+        a = a.replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        j += a.length
+        if (j >= i) {
+          return k - (j - i)
+        }
       }
     }
     // https://github.com/hexojs/hexo-util/blob/979873b63a725377c2bd6ad834d790023496130d/lib/highlight.js#L123
