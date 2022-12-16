@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>MP4 to GIF</title>
+  <style>
+    .error,
+    .warning {
+      margin: 0;
+      padding: 1rem;
+      background-color: rgba(255, 0, 0, 0.2);
+    }
+    .warning {
+      background-color: rgba(255, 255, 0, 0.2);
+    }
+    .cli {
+      font-family: monospace;
+    }
+    .content > div {
+      margin: 8px 0;
+    }
+    input {
+      min-width: 500px;
+    }
+  </style>
+</head>
+<body>
+  <div id="$progress" style="position:absolute;top:0;left:0;width:0%;height:2px;background:#add8e6;transition:opacity 1s"></div>
+  <h1 class="title">MP4 to GIF</h1>
+
+  <section class="content" id="$content">
+    <div>
+      <label for="$options">Gifsicle Options:</label>
+      <input id="$options" class="cli" value="-U -i -O2 -k 256 --resize-fit-width 100">
+    </div>
+    <div>
+      <label for="$drop">Drop frames:</label>
+      <select id="$drop">
+        <option value="1">keep all</option>
+        <option value="2" selected>drop 1, 3, 5, ... (keep half)</option>
+        <option value="3">drop 1,2, 4,5, ... (keep 1/3)</option>
+        <option value="4">drop 1,2,3, 5,6,7, ... (keep 1/4)</option>
+      </select>
+    </div>
+    <div>
+      <label for="$file">MP4:</label>
+      <input id="$file" type="file" accept="video/*">
+      <span id="$info"></span>
+    </div>
+    <div>
+      <button id="$run">Run</button>
+    </div>
+    <p id="$status"></p>
+    <img src="" id="$output">
+    <p id="$error" class="error" style="display: none"></p>
+  </section>
+
+  <section id="$not_supported" style="display: none">
+    <p class="warning">
+      Your browser does not support <a href="https://caniuse.com/webcodecs" rel="noreferrer" target="_blank">VideoDecoder</a>,
+      please use the latest chrome to open this page.
+    </p>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/gh/jnordberg/gif.js@master/dist/gif.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+  <script>
+    /// ref: https://github.com/w3c/webcodecs/blob/main/samples/video-decode-display/demuxer_mp4.js
+    ///      https://github.com/w3c/webcodecs/blob/main/samples/audio-video-player/media_worker.js
+    ///
+    /// Note: The decoding (mp4box & VideoDecoder) and gif encoding can be moved to workers, but I don't care.
+
+    var gifsicle_p = import('https://cdn.jsdelivr.net/npm/gifsicle-wasm-browser@1.5.16/dist/gifsicle.min.js')
+
+    async function handle() {
+      var file = this.files[0]; if (!file) return;
+
+      var canvas = document.createElement('canvas')
+      var ctx = canvas.getContext('2d', { willReadFrequently: true })
+      var totalChunks = 0, decoded = 0, prev_frame, delay
+
+      var gif, run_gif = () => {
+        if (prev_frame) {
+          ctx.drawImage(prev_frame, 0, 0, prev_frame.codedWidth, prev_frame.codedHeight)
+          gif.addFrame(canvas, { copy: true, delay })
+          prev_frame.close()
+          prev_frame = null
+        }
+        $status.textContent = 'Making Raw GIF ...'
+        $progress.style.width = '100%';
+        gif.render()
+      }
+
+      var decoder = new VideoDecoder({
+        output: (frame) => {
+          var index = decoded;
+          var percent = totalChunks ? ++decoded / totalChunks : 0
+          $progress.style.width = Math.round(percent * 100) + '%';
+          var N = parseInt($drop.value) || 1
+          if (index % N === 0) {
+            if (!prev_frame) {
+              prev_frame = frame
+            } else {
+              delay = (frame.timestamp - prev_frame.timestamp) / 1000
+              ctx.drawImage(prev_frame, 0, 0, prev_frame.codedWidth, prev_frame.codedHeight)
+              gif.addFrame(canvas, { copy: true, delay })
+              prev_frame.close()
+              prev_frame = frame
+            }
+          } else {
+            frame.close()
+          }
+        },
+        error: fail
+      })
+
+      var mp4 = MP4Box.createFile()
+      mp4.onError = fail;
+      mp4.onReady = (info) => {
+        var track = info.videoTracks[0]
+        var config = {
+          codec: track.codec,
+          codedWidth: track.video.width,
+          codedHeight: track.video.height,
+          description: getDescription(mp4, track),
+        }
+
+        $info.textContent = `codec=${config.codec}, size=${config.codedWidth}x${config.codedHeight}`
+
+        canvas.width = config.codedWidth
+        canvas.height = config.codedHeight
+
+        gif = new GIF({
+          workers: navigator.hardwareConcurrency || 1,
+          background: 'transparent',
+          width: config.codedWidth,
+          height: config.codedHeight,
+        })
+        gif.on('progress', (percent) => {
+          $progress.style.width = Math.round(percent * 100) + '%';
+          if (percent === 1) $progress.style.opacity = 0;
+        });
+        gif.on('finished', async (blob) => {
+          $status.textContent = 'Optimizing ...'
+          var gifsicle = await gifsicle_p
+          var [file] = await gifsicle.default.run({
+            input: [{ file: blob, name: 'in.gif' }],
+            command: ["in.gif " + $options.value + " -o /out/out.gif"],
+          })
+          $status.textContent = 'Done.'
+          $output.src = URL.createObjectURL(file);
+        });
+
+        decoder.configure(config)
+
+        mp4.setExtractionOptions(track.id)
+        mp4.start()
+      }
+      mp4.onSamples = async (id, ref, samples) => {
+        totalChunks += samples.length
+        for (var sample of samples) {
+          var chunk = new EncodedVideoChunk({
+            type: sample.is_sync ? 'key' : 'delta',
+            timestamp: 1e6 * sample.cts / sample.timescale,
+            duration: 1e6 * sample.duration / sample.timescale,
+            data: sample.data
+          })
+          decoder.decode(chunk)
+        }
+        await decoder.flush()
+        decoder.close()
+        run_gif()
+      }
+      var buffer = await file.arrayBuffer()
+      buffer.fileStart = 0
+      mp4.appendBuffer(buffer)
+      mp4.flush()
+      $status.textContent = 'Decoding ...'
+    }
+
+    function getDescription(mp4, track) {
+      var t = mp4.getTrackById(track.id)
+      for (var entry of t.mdia.minf.stbl.stsd.entries) {
+        if (entry.avcC || entry.hvcC) {
+          var stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN)
+          if (entry.avcC) {
+            entry.avcC.write(stream)
+          } else {
+            entry.hvcC.write(stream)
+          }
+          return new Uint8Array(stream.buffer, 8)
+        }
+      }
+      throw new Error("avcC or hvcC not found")
+    }
+
+    function fail(err) {
+      $error.textContent = `${err.name}: ${err.message}`
+      $error.style.display = ''
+      throw err;
+    }
+
+    $run.onclick = handle.bind($file)
+
+    if (!window.VideoDecoder) {
+      $file.oninput = null
+      $content.style.display = 'none'
+      $not_supported.style.display = ''
+    }
+  </script>
+</body>
+</html>
