@@ -35,6 +35,16 @@
     <label id="$file_label" for="$file" class="file">Drag & drop mp4 file here.</label>
     <samp id="$info" class="info" style="display: none"></samp>
     <samp id="$info2" class="info" style="display: none">(decoding frames)</samp>
+    <select id="$fps" style="display: none">
+      <option value="10">10 FPS</option>
+      <option value="16">16 FPS</option>
+      <option value="33" selected>33 FPS</option>
+    </select>
+    <button id="$run" style="display: none">Convert!</button>
+  </section>
+
+  <section>
+    <img src="" id="$output">
   </section>
 
   <section id="$not_supported" style="display: none">
@@ -49,7 +59,10 @@
   <script type="module">
     /// References:
     /// https://web.dev/webcodecs#decoding
-    /// https://github.com/jnordberg/gif.js
+    /// https://github.com/jnordberg/gif.js (MIT)
+    /// https://github.com/NickeManarin/ScreenToGif (MS-PL)
+    /// https://github.com/mattdesl/gifenc#how-gif-encoding-works
+    /// https://giflib.sourceforge.net/whatsinagif/index.html
 
     if (!('VideoDecoder' in window)) {
       $not_supported.style.display = ''
@@ -118,7 +131,7 @@
           canvas.height = frame.displayHeight
           canvas.getContext('2d').drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight)
           canvas.timestamp = frame.timestamp // microseconds, (/ 1000) to get miliseconds
-          frame.close()
+          frame.close() // ! this is important, otherwise the decoder will block forever
           frames.push(canvas)
           raf ||= requestAnimationFrame(refreshInfo)
         },
@@ -146,6 +159,299 @@
     $file.oninput = function onInput() {
       loadFile(this.files[0])
     }
+    $run.onclick = function processFrames() {
+      // 1. Filter in FPS
+      const filtered = []
+      const fps = parseInt($fps.value)
+      const step = 1000 / fps // miliseconds
+      const length = frames.length
+      let lastIndex = -1, lastTime = 0, lastFrame = frames[0]
+      for (let i = 0; i < length; ++i) {
+        const time = frames[i].timestamp / 1000
+        const index = Math.floor(time / step)
+        if (lastIndex !== index) {
+          const delay = time - lastTime
+          filtered.push({ frame: lastFrame, delay })
+          lastIndex = index
+          lastTime = time
+          lastFrame = frames[i]
+        }
+      }
+      // okay, let's drop the last frame :/
+      $info2.textContent = `(${filtered.length} frames)`
+
+      // 2. Quantize & Write GIF
+      let isFirstFrame = true
+      let indexedPixels, colorTable, colorTableSize
+      const stream = new DataStream()
+      for (let i = 0, len = filtered.length; i < len; ++i) {
+        const { frame: e, delay } = filtered[i]
+        const ctx = e.getContext('2d', { willReadFrequently: true })
+        const { width, height, data } = ctx.getImageData(0, 0, e.width, e.height)
+        const pixels = new Uint32Array(data.buffer)
+        const quantizer = new OctreeQuantizer()
+        indexedPixels = quantizer.quantize(pixels)
+        colorTable = quantizer.colorTable
+        if (isFirstFrame) {
+          updateColorTableSize()
+          writeLogicalScreenDescriptor(width, height)
+          writeApplicationExtension()
+        }
+        writeGraphicControlExtension(delay, i === len - 1)
+        writeImageDescriptor(0, 0, width, height)
+        isFirstFrame = false
+        writePalette()
+        writeImage(width, height, indexedPixels, 8)
+      }
+      writeEnd()
+      console.log(stream)
+      $output.src = URL.createObjectURL(new Blob([stream.buffer]))
+
+      function updateColorTableSize() {
+        colorTableSize = colorTable.length > 1 ? Math.log(colorTable.length - 1, 2) : 0
+      }
+
+      function bit8Array() {
+        const bits = [0,0,0,0,0,0,0,0]
+        function set(i, bool) { // i = 0 ~ 7
+          bits[i] = bool ? 1 : 0
+        }
+        function toByte() {
+          let result = 0
+          for (let i = 0; i < 8; ++i) {
+            result <<= 1
+            result |= bits[i]
+          }
+          return result
+        }
+        function copy(i, bools) {
+          for (let j = 0; j < bools.length; ++j)
+            set(i + j, bools[j])
+        }
+        return { set, copy, toByte }
+      }
+
+      function toBits(value) {
+        return [(value & 0b100) >> 2, (value & 0b10) >> 1, value & 1]
+      }
+
+      function writeLogicalScreenDescriptor(width, height) {
+        stream.writeString('GIF89a')
+        stream.writeUint16(width)
+        stream.writeUint16(height)
+        const b = bit8Array()
+        b.set(0, false) // use global color table
+        b.copy(1, toBits(colorTableSize))
+        b.set(4, true) // sort
+        b.copy(5, toBits(0)) // size of global color table
+        stream.writeUint8(b.toByte())
+        stream.writeUint8(0) // transparent color index
+        stream.writeUint8(0) // pixel aspect ratio, 1:1
+      }
+
+      function writeApplicationExtension() {
+        stream.writeUint8(0x21)
+        stream.writeUint8(0xff)
+        stream.writeUint8(0x0b)
+        stream.writeString("NETSCAPE2.0")
+        stream.writeUint8(0x03)
+        stream.writeUint8(0x01)
+        stream.writeUint16(0) // repeat count
+        stream.writeUint8(0x00) // end
+      }
+
+      function writeGraphicControlExtension(delay, isLastFrame) {
+        stream.writeUint8(0x21)
+        stream.writeUint8(0xf9)
+        stream.writeUint8(0x04)
+        const b = bit8Array()
+        if (isFirstFrame) {
+          b.copy(3, [0, 0, 1]) // leave
+        } else {
+          // b.copy(3, [0, 0, 0]) // do nothing
+        }
+        b.set(6, false) // user input
+        b.set(7, false) // transparent color
+        stream.writeUint8(b.toByte())
+        stream.writeUint16(Math.round(delay))
+        stream.writeUint8(0) // transparent index
+        stream.writeUint8(0) // end
+      }
+
+      function writeImageDescriptor(x, y, width, height) {
+        stream.writeUint8(0x2c)
+        stream.writeUint16(x)
+        stream.writeUint16(y)
+        stream.writeUint16(width)
+        stream.writeUint16(height)
+        const b = bit8Array()
+        b.set(0, true) // local color table
+        b.set(1, false)
+        b.set(2, true)
+        b.set(3, false)
+        b.set(4, false)
+        b.copy(5, toBits(colorTableSize))
+        stream.writeUint8(b.toByte())
+      }
+
+      function writePalette() {
+        for (const color of colorTable) {
+          stream.writeUint8(color & Red)
+          stream.writeUint8((color & Green) >> 8)
+          stream.writeUint8((color & Blue) >> 16)
+        }
+        const emptySpace = (Math.pow(2, colorTableSize + 1) - colorTable.length) * 3
+        for (let i = 0; i < emptySpace; ++i)
+          stream.writeUint8(0)
+      }
+
+      function writeImage(width, height, pixels, colorDepth) {
+        const EOF = -1, BITS = 12, DEFAULT_HSIZE = 5003, MASKS = [
+          0x0000, 0x0001, 0x0003, 0x0007, 0x000f, 0x001f, 0x003f, 0x007f,
+          0x00ff, 0x01ff, 0x03ff, 0x07ff, 0x0fff, 0x1fff, 0x3fff, 0x7fff, 0xffff ];
+
+        const accum = new Uint8Array(256), htab = new Int32Array(DEFAULT_HSIZE), codetab = new Int32Array(DEFAULT_HSIZE)
+
+        const hsize = htab.length
+        const initCodeSize = Math.max(2, colorDepth)
+        htab.fill(-1)
+
+        let cur_accum = 0, cur_bits = 0
+        const init_bits = initCodeSize + 1
+        const g_init_bits = init_bits
+
+        let clear_flg = false
+        let n_bits = g_init_bits
+        let maxcode = (1 << n_bits) - 1
+
+        const ClearCode = 1 << (init_bits - 1)
+        const EOFCode = ClearCode + 1
+        let free_ent = ClearCode + 2
+        let a_count = 0
+
+        let ent = pixels[0]
+
+        let hshift = 0;
+        for (let fcode = hsize; fcode < 65536; fcode *= 2) {
+          ++hshift;
+        }
+        hshift = 8 - hshift; // set hash code range bound
+
+        stream.writeUint8(initCodeSize); // write "initial code size" byte
+
+        output(ClearCode);
+
+        const length = pixels.length;
+        for (let idx = 1; idx < length; idx++) {
+          next_block: {
+            const c = pixels[idx];
+            const fcode = (c << BITS) + ent;
+            let i = (c << hshift) ^ ent; // xor hashing
+            if (htab[i] === fcode) {
+              ent = codetab[i];
+              break next_block;
+            }
+
+            const disp = i === 0 ? 1 : hsize - i; // secondary hash (after G. Knott)
+            while (htab[i] >= 0) {
+              // non-empty slot
+              i -= disp;
+              if (i < 0) i += hsize;
+              if (htab[i] === fcode) {
+                ent = codetab[i];
+                break next_block;
+              }
+            }
+            output(ent);
+            ent = c;
+            if (free_ent < 1 << BITS) {
+              codetab[i] = free_ent++; // code -> hashtable
+              htab[i] = fcode;
+            } else {
+              // Clear out the hash table
+              // table clear for block compress
+              htab.fill(-1);
+              free_ent = ClearCode + 2;
+              clear_flg = true;
+              output(ClearCode);
+            }
+          }
+        }
+
+        // Put out the final code.
+        output(ent);
+        output(EOFCode);
+
+        stream.writeUint8(0); // write block terminator
+
+        function output(code) {
+          cur_accum &= MASKS[cur_bits];
+
+          if (cur_bits > 0) cur_accum |= code << cur_bits;
+          else cur_accum = code;
+
+          cur_bits += n_bits;
+
+          while (cur_bits >= 8) {
+            // Add a character to the end of the current packet, and if it is 254
+            // characters, flush the packet to disk.
+            accum[a_count++] = cur_accum & 0xff;
+            if (a_count >= 254) {
+              stream.writeUint8(a_count);
+              for (let i = 0; i < a_count; ++i) {
+                stream.writeUint8(accum[i]);
+              }
+              a_count = 0;
+            }
+            cur_accum >>= 8;
+            cur_bits -= 8;
+          }
+
+          // If the next entry is going to be too big for the code size,
+          // then increase it, if possible.
+          if (free_ent > maxcode || clear_flg) {
+            if (clear_flg) {
+              n_bits = g_init_bits;
+              maxcode = (1 << n_bits) - 1;
+              clear_flg = false;
+            } else {
+              ++n_bits;
+              maxcode = n_bits === BITS ? (1 << n_bits) : (1 << n_bits) - 1;
+            }
+          }
+
+          if (code == EOFCode) {
+            // At EOF, write the rest of the buffer.
+            while (cur_bits > 0) {
+              // Add a character to the end of the current packet, and if it is 254
+              // characters, flush the packet to disk.
+              accum[a_count++] = cur_accum & 0xff;
+              if (a_count >= 254) {
+                stream.writeUint8(a_count);
+                for (let i = 0; i < a_count; ++i) {
+                  stream.writeUint8(accum[i]);
+                }
+                a_count = 0;
+              }
+              cur_accum >>= 8;
+              cur_bits -= 8;
+            }
+            // Flush the packet to disk, and reset the accumulator
+            if (a_count > 0) {
+              stream.writeUint8(a_count);
+              for (let i = 0; i < a_count; ++i) {
+                stream.writeUint8(accum[i]);
+              }
+              a_count = 0;
+            }
+          }
+        }
+      }
+
+      function writeEnd() {
+        stream.writeUint8(0x3b)
+      }
+    }
 
     function refreshInfo() {
       $info2.textContent = `(~${frames.length} frames)`
@@ -156,9 +462,205 @@
       $info2.textContent = `(${frames.length} frames)`
       cancelAnimationFrame(raf)
 
-      // TODO: optimize (quantize) frames
-      // TODO: calculate green screen (in parallel)
-      // TODO: write gif file
+      $fps.style.display = ''
+      $run.style.display = ''
+    }
+
+    const Red      = 0x000000ff
+    const Green    = 0x0000ff00
+    const Blue     = 0x00ff0000
+    const Alpha    = 0xff000000
+    const NonAlpha = 0x00ffffff
+
+    class Quantizer {
+      _colorMap = new Map()
+      depth = 4
+      maxColors = 256
+      colorTable = []
+      quantize(pixels) {
+        this.firstPass(pixels)
+        this.colorTable = this.buildPalette()
+        return this.secondPass(pixels)
+      }
+      firstPass(pixels) {
+        for (let i = 0, len = pixels.length; i < len; ++i)
+          this.initialQuantizePixel(pixels[i])
+      }
+      secondPass(pixels) {
+        const output = []
+        for (let i = 0, len = pixels.length; i < len; ++i) {
+          const pixel = pixels[i]
+
+          if (pixel & Alpha === 0) {
+            output.push(this.colorTable.length - 1)
+            continue
+          }
+
+          const hash = pixel & NonAlpha
+          if (this._colorMap.has(hash)) {
+            output.push(this._colorMap.get(hash))
+            continue
+          }
+
+          const index = this.quantizePixel(pixel)
+          output.push(index)
+          this._colorMap.set(hash, index)
+        }
+        return output
+      }
+      initialQuantizePixel(pixel) {
+      }
+      quantizePixel(pixel) {
+      }
+      buildPalette() {
+      }
+    }
+
+    class OctreeQuantizer extends Quantizer {
+      _octree = new Octree(8)
+      initialQuantizePixel(pixel) {
+        if (pixel & Alpha === 0) {
+          return
+        } else {
+          this._octree.addColor(pixel)
+        }
+      }
+      quantizePixel(pixel) {
+        return this._octree.getPaletteIndex(pixel)
+      }
+      buildPalette() {
+        return this._octree.palletize(this.maxColors)
+      }
+    }
+
+    const Mask = [ 0x80, 0x40, 0x20, 0x10, 0x08, 0x04, 0x02, 0x01 ]
+
+    class Octree {
+      constructor(maxColorBits) {
+        this._maxColorBits = maxColorBits
+        this.leaves = 0
+        this.reducibleNodes = new Array(9)
+        this._root = new OctreeNode(0, maxColorBits, this)
+        this._previousColor = 0
+        this._previousNode = null
+      }
+      addColor(pixel) {
+        if (this._previousColor === pixel) {
+          if (this._previousNode == null) {
+            this._previousColor = pixel
+            this._root.addColor(pixel, this._maxColorBits, 0, this)
+          } else {
+            this._previousNode.increment(pixel)
+          }
+        } else {
+          this._previousColor = pixel
+          this._root.addColor(pixel, this._maxColorBits, 0, this)
+        }
+      }
+      reduce() {
+        let index
+        for (index = this._maxColorBits - 1; index > 0 && this.reducibleNodes[index] == null; --index)
+          ;
+        const node = this.reducibleNodes[index]
+        this.reducibleNodes[index] = node.nextReducible
+
+        this.leaves -= node.reduce()
+        this._previousNode = null
+      }
+      palletize(colorCount) {
+        while (this.leaves > colorCount)
+          this.reduce()
+        const palette = []
+        this._root.constructPalette(palette, { value: 0 })
+        return palette
+      }
+      getPaletteIndex(pixel) {
+        return this._root.getPaletteIndex(pixel, 0)
+      }
+    }
+
+    class OctreeNode {
+      constructor(level, colorBits, octree) {
+        this._leaf = level === colorBits
+        this._red = this._green = this._blue = 0
+        this._pixelCount = 0
+        this._paletteIndex = 0
+        if (this._leaf) {
+          octree.leaves++
+          this.nextReducible = null
+          this.children = null
+        } else {
+          this.nextReducible = octree.reducibleNodes[level]
+          octree.reducibleNodes[level] = this
+          this.children = new Array(8)
+        }
+      }
+      addColor(pixel, colorBits, level, octree) {
+        if (this._leaf) {
+          this.increment(pixel)
+          octree._previousNode = this
+        } else {
+          const shift = 7 - level
+          const index = (  (pixel & Red          & Mask[level]) >> (shift - 2)) |
+                        ((((pixel & Green) >> 8) & Mask[level]) >> (shift - 1)) |
+                        ((((pixel & Blue) >> 16) & Mask[level]) >> (shift))
+          let child = this.children[index]
+          if (child == null) {
+            child = new OctreeNode(level + 1, colorBits, octree)
+            this.children[index] = child
+          }
+          child.addColor(pixel, colorBits, level + 1, octree)
+        }
+      }
+      reduce() {
+        this._red = this._green = this._blue = 0
+        let count = 0
+        for (let i = 0; i < 8; ++i) {
+          if (this.children[i] == null)
+            continue;
+          this._red   += this.children[i]._red
+          this._green += this.children[i]._green
+          this._blue  += this.children[i]._blue
+          this._pixelCount += this.children[i]._pixelCount
+          ++count
+          this.children[i] = null
+        }
+        this._leaf = true
+        return count - 1
+      }
+      constructPalette(palette, indexRef) {
+        if (this._leaf) {
+          this._paletteIndex = indexRef.value++
+          palette.push(this._red | (this._green << 8) | (this._blue << 16))
+        } else {
+          for (let i = 0; i < 8; ++i) {
+            if (this.children[i] != null)
+              this.children[i].constructPalette(palette, indexRef)
+          }
+        }
+      }
+      getPaletteIndex(pixel, level) {
+        let paletteIndex = this._paletteIndex
+        if (this._leaf)
+          return paletteIndex
+
+        const shift = 7 - level
+        const index = (  (pixel & Red          & Mask[level]) >> (shift - 2)) |
+                      ((((pixel & Green) >> 8) & Mask[level]) >> (shift - 1)) |
+                      ((((pixel & Blue) >> 16) & Mask[level]) >> (shift))
+        if (this.children[index]) {
+          paletteIndex = this.children[index].getPaletteIndex(pixel, level + 1)
+        } else {
+          throw new Error('should not happen')
+        }
+        return paletteIndex
+      }
+      increment(pixel) {
+        this._pixelCount++
+        this._red   +=   pixel & Red
+        this._green += ((pixel & Green) >> 8)
+        this._blue  += ((pixel & Blue) >> 16)
+      }
     }
   </script>
 </body>
