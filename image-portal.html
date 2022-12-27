@@ -127,8 +127,8 @@
             catch (error) { console.warn(error) }
 
             const canvas = document.createElement('canvas')
-            const width  = canvas.width  = $preview.width
-            const height = canvas.height = $preview.height
+            const width  = canvas.width  = $preview.naturalWidth
+            const height = canvas.height = $preview.naturalHeight
             const ctx = canvas.getContext('2d')
             ctx.drawImage($preview, 0, 0, width, height)
 
