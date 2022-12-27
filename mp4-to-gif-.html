@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>MP4 to GIF (2)</title>
+  <style>
+    .error {
+      margin: 0;
+      padding: 1rem;
+      background-color: rgba(255, 0, 0, 0.2);
+    }
+    .info {
+      padding: 1rem;
+      font-size: 14px;
+      padding: 0.5rem;
+      background: var(--control);
+    }
+    .file {
+      padding: 1rem;
+      border: 1px dashed var(--control);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">MP4 to GIF</h1>
+
+  <section>
+    <input id="$file" style="display: none" type="file" accept="video/*">
+    <label id="$file_label" for="$file" class="file">Drag & drop mp4 file here.</label>
+    <samp id="$info" class="info" style="display: none"></samp>
+    <samp id="$info2" class="info" style="display: none">(decoding frames)</samp>
+  </section>
+
+  <section id="$not_supported" style="display: none">
+    <p class="error">
+      Your browser does not support
+      <a href="https://caniuse.com/webcodecs" rel="noreferrer" target="_blank">VideoDecoder</a>,
+      please use the latest chrome to open this page.
+    </p>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+  <script type="module">
+    /// References:
+    /// https://web.dev/webcodecs#decoding
+    /// https://github.com/jnordberg/gif.js
+
+    if (!('VideoDecoder' in window)) {
+      $not_supported.style.display = ''
+      throw new Error('VideoDecoder is not supported, refuse to work.')
+    }
+
+    let decoder, mp4file, track, config, frames, raf
+
+    function onReady(info) {
+      track = info.videoTracks[0]
+      config = {
+        codec: track.codec,
+        codedHeight: track.video.height,
+        codedWidth: track.video.width,
+        description: getDescription(track),
+      }
+      $info.textContent = `${config.codec} @ ${config.codedWidth}x${config.codedHeight}`
+      $info.style.display = ''
+      decoder.configure(config)
+
+      mp4file.setExtractionOptions(track.id)
+      mp4file.start()
+      mp4file.flush()
+      decoder.flush().then(processFrames)
+
+      function getDescription(track) {
+        const trak = mp4file.getTrackById(track.id)
+        for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+          if (entry.avcC || entry.hvcC) {
+            const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN)
+            if (entry.avcC) {
+              entry.avcC.write(stream)
+            } else {
+              entry.hvcC.write(stream)
+            }
+            return new Uint8Array(stream.buffer, 8)
+          }
+        }
+        return null
+      }
+    }
+
+    function onSamples(trackId, ref, samples) {
+      $info2.style.display = ''
+      for (const sample of samples) {
+        decoder.decode(new EncodedVideoChunk({
+          type: sample.is_sync ? 'key' : 'delta',
+          timestamp: 1e6 * sample.cts / sample.timescale,
+          duration: 1e6 * sample.duration / sample.timescale,
+          data: sample.data,
+        }))
+      }
+    }
+
+    async function loadFile(file) {
+      if (!file) return;
+      const buffer = await file.arrayBuffer()
+      buffer.fileStart = 0
+
+      frames = []
+      decoder?.close()
+      decoder = new VideoDecoder({
+        output(frame) {
+          const canvas = document.createElement('canvas')
+          canvas.width = frame.displayWidth
+          canvas.height = frame.displayHeight
+          canvas.getContext('2d').drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight)
+          canvas.timestamp = frame.timestamp // microseconds, (/ 1000) to get miliseconds
+          frame.close()
+          frames.push(canvas)
+          raf ||= requestAnimationFrame(refreshInfo)
+        },
+        error: console.error,
+      })
+
+      mp4file = MP4Box.createFile()
+      mp4file.onError = console.error
+      mp4file.onReady = onReady
+      mp4file.onSamples = onSamples
+
+      mp4file.appendBuffer(buffer)
+      mp4file.flush()
+    }
+
+    $file_label.ondragover = function onDragOver(ev) {
+      ev.preventDefault()
+      $file_label.classList.add('active')
+    }
+    $file_label.ondrop = function onDrop(ev) {
+      ev.preventDefault()
+      $file_label.classList.remove('active')
+      loadFile(ev.dataTransfer.files[0])
+    }
+    $file.oninput = function onInput() {
+      loadFile(this.files[0])
+    }
+
+    function refreshInfo() {
+      $info2.textContent = `(~${frames.length} frames)`
+      raf = 0
+    }
+
+    function processFrames() {
+      $info2.textContent = `(${frames.length} frames)`
+      cancelAnimationFrame(raf)
+
+      // TODO: optimize (quantize) frames
+      // TODO: calculate green screen (in parallel)
+      // TODO: write gif file
+    }
+  </script>
+</body>
+</html>
