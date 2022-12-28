@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Floyd–Steinberg dithering</title>
+    <style>
+        html, body {
+            height: 100%;
+        }
+        .center, img, canvas {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .center {
+            pointer-events: none;
+            user-select: none;
+        }
+        img, canvas {
+            z-index: 9999;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Floyd–Steinberg dithering</h1>
+    <span class="center">Drag & drop an image here.</span>
+    <script>
+        /// Reference: https://www.wikiwand.com/en/Floyd%E2%80%93Steinberg_dithering
+        Object.assign(document.body, {
+            ondragover(ev) {
+                ev.preventDefault()
+                window._canvas?.remove()
+                window._canvas = null
+            },
+            async ondrop(ev) {
+                ev.preventDefault()
+                const file = ev.dataTransfer.files[0]
+                if (!file) return;
+
+                const img = new Image()
+                await new Promise(resolve => {
+                    img.onload = resolve
+                    img.src = URL.createObjectURL(file)
+                })
+
+                const canvas = document.createElement('canvas')
+                canvas.width  = img.naturalWidth
+                canvas.height = img.naturalHeight
+
+                const ctx = canvas.getContext('2d')
+                ctx.drawImage(img, 0, 0)
+
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+                const pixels = new Uint32Array(imageData.data.buffer)
+                const length = pixels.length
+                const source = new Array(length)
+
+                // 1. convert to grayscale
+                for (let i = 0; i < length; ++i) {
+                    source[i] = greyscale(pixels[i])
+                }
+                function greyscale(pixel) {
+                    const r =  pixel & 0x000000FF
+                    const g = (pixel & 0x0000FF00) >> 8
+                    const b = (pixel & 0x00FF0000) >> 16
+                    return r * .299 + g * .587 + b * .114
+                }
+
+                // 2. run algorithm
+                for (let i = 0; i < length; ++i) {
+                    const x = i % canvas.width, y = i / canvas.width | 0
+                    const oldcolor = source[i]
+                    const newcolor = oldcolor < 0x40 ? 0 : oldcolor < 0x80 ? 0x60 : oldcolor < 0xC0 ? 0xA0 : 0xFF
+                    const error = oldcolor - newcolor
+                    source[i] = newcolor
+                    if (x + 1 <   canvas.width ) source[i + 1               ] += (error * 7) >> 4;
+                    if (y + 1 === canvas.height) continue;
+                    if (x     >   0            ) source[i + canvas.width - 1] += (error * 3) >> 4;
+                                                 source[i + canvas.width    ] += (error * 5) >> 4;
+                    if (x + 1 <   canvas.width ) source[i + canvas.width + 1] += (error    ) >> 4;
+                }
+
+                // 3. put back
+                for (let i = 0; i < length; ++i) {
+                    const grey  = source[i]
+                    const color = 0xFF000000 | (grey << 16) | (grey << 8) | grey
+                    pixels[i] = color
+                }
+                ctx.putImageData(imageData, 0, 0)
+
+                canvas.toBlob(blob => {
+                    img.src = URL.createObjectURL(blob)
+                    document.body.append(img)
+                    window._canvas = img
+                }, 'image/png', 1)
+            },
+        })
+    </script>
+</body>
+</html>
