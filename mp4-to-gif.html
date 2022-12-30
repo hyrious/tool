@@ -19,44 +19,54 @@
     }
     .cli {
       font-family: monospace;
-    }
-    .content > div {
-      margin: 8px 0;
-    }
-    input {
       min-width: 500px;
+    }
+    .info {
+      padding: 1rem;
+      font-size: 14px;
+      padding: 0.5rem;
+      background: var(--control);
+    }
+    .file {
+      display: inline-block;
+      margin: 1rem 0;
+      padding: 1rem;
+      border: 1px dashed var(--control);
+      border-radius: 6px;
+      cursor: pointer;
     }
   </style>
 </head>
 <body>
-  <div id="$progress" style="position:absolute;top:0;left:0;width:0%;height:2px;background:#add8e6;transition:opacity 1s"></div>
+  <div id="$progress" style="position:absolute;top:0;left:0;width:0%;height:2px;background:#add8e6;transition:opacity 1s,width .1s"></div>
   <h1 class="title">MP4 to GIF</h1>
 
   <section class="content" id="$content">
-    <div>
+    <div class="gifsicle">
+      <input id="$gifsicle" type="checkbox" checked>
+      <label for="$gifsicle">Enable?</label>
       <label for="$options">Gifsicle Options:</label>
       <input id="$options" class="cli" value="-U -i -O2 -k 256 --resize-fit-width 100">
     </div>
-    <div>
-      <label for="$drop">Drop frames:</label>
-      <select id="$drop">
-        <option value="1">keep all</option>
-        <option value="2" selected>drop 1, 3, 5, ... (keep half)</option>
-        <option value="3">drop 1,2, 4,5, ... (keep 1/3)</option>
-        <option value="4">drop 1,2,3, 5,6,7, ... (keep 1/4)</option>
-      </select>
-    </div>
-    <div>
-      <label for="$file">MP4:</label>
-      <input id="$file" type="file" accept="video/*">
-      <span id="$info"></span>
-    </div>
-    <div>
-      <button id="$run">Run</button>
-    </div>
-    <p id="$status"></p>
+    <input id="$file" style="display: none" type="file" accept="video/*">
+    <label id="$file_label" for="$file" class="file">Drag & drop mp4 file here.</label>
+    <samp id="$info" class="info" style="display: none"></samp>
+    <samp id="$info2" class="info" style="display: none">(decoding frames)</samp>
+    <select id="$fps" style="display: none">
+      <option value="10">10 FPS</option>
+      <option value="16">16 FPS</option>
+      <option value="33" selected>33 FPS</option>
+    </select>
+    <label id="$format_label" for="$format" style="display: none">Format:</label>
+    <select id="$format" style="display: none">
+      <option value="rgb444">rgb444</option>
+      <option value="rgb565" selected>rgb565</option>
+    </select>
+    <button id="$run" style="display: none">Convert!</button>
+  </section>
+
+  <section>
     <img src="" id="$output">
-    <p id="$error" class="error" style="display: none"></p>
   </section>
 
   <section id="$not_supported" style="display: none">
@@ -66,150 +76,273 @@
     </p>
   </section>
 
-  <script src="https://cdn.jsdelivr.net/gh/jnordberg/gif.js@master/dist/gif.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
-  <script>
-    /// ref: https://github.com/w3c/webcodecs/blob/main/samples/video-decode-display/demuxer_mp4.js
-    ///      https://github.com/w3c/webcodecs/blob/main/samples/audio-video-player/media_worker.js
-    ///
-    /// Note: The decoding (mp4box & VideoDecoder) and gif encoding can be moved to workers, but I don't care.
 
+  <script id="$worker" type="module/worker">
+    /// https://github.com/mattdesl/gifenc/blob/HEAD/test/worker.js
+
+    import { GIFEncoder, quantize, applyPalette } from 'https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js'
+
+    var options
+
+    onmessage = function onmessage(ev) {
+      var detail = ev.data
+      if (detail.event === 'init') {
+        options = { ...detail }
+        postMessage('ready')
+      } else {
+        var { format = 'rgb444', width, height, maxColors = 256, repeat = 0, delay = 0 } = options
+        var [ data, frame ] = detail
+        var palette = quantize(data, maxColors, { format })
+        var index = applyPalette(data, palette, format)
+        var gif = GIFEncoder({ auto: false })
+        gif.writeFrame(index, width, height, { first: frame === 0, repeat: 0, delay, palette })
+        var output = gif.bytesView()
+        postMessage([ output, frame ], [output.buffer])
+      }
+    }
+  </script>
+
+  <script type="module">
+    /// References:
+    /// https://web.dev/webcodecs#decoding
+    /// https://github.com/mattdesl/gifenc (MIT)
+    ///
+    /// Note: The decoding (mp4box & VideoDecoder) can be moved to workers, but I don't care.
+
+    var gifenc_p = import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js')
     var gifsicle_p = import('https://cdn.jsdelivr.net/npm/gifsicle-wasm-browser@1.5.16/dist/gifsicle.min.js')
 
-    async function handle() {
-      var file = this.files[0]; if (!file) return;
+    if (!('VideoDecoder' in window)) {
+      $not_supported.style.display = ''
+      throw new Error('VideoDecoder is not supported, refuse to work.')
+    }
 
-      var canvas = document.createElement('canvas')
-      var ctx = canvas.getContext('2d', { willReadFrequently: true })
-      var totalChunks = 0, decoded = 0, prev_frame, delay
+    function noop() {}
+    async function createWorkerEncoder(opts = {}) {
+      var { progress = noop, totalFrames, width, height, fps = 33, maxColors = 256,
+            workerCount = navigator.hardwareConcurrency || 4, format = 'rgb444' } = opts
 
-      var gif, run_gif = () => {
-        if (prev_frame) {
-          ctx.drawImage(prev_frame, 0, 0, prev_frame.codedWidth, prev_frame.codedHeight)
-          gif.addFrame(canvas, { copy: true, delay })
-          prev_frame.close()
-          prev_frame = null
-        }
-        $status.textContent = 'Making Raw GIF ...'
-        $progress.style.width = '100%';
-        gif.render()
+      if (!totalFrames) throw new Error('missing totalFrames');
+      if (!width || !height) throw new Error('missing width, height');
+
+      var workerUrl = URL.createObjectURL(new Blob([ $worker.textContent ], { type: 'application/javascript' }))
+      var workers = Array.from({ length: workerCount }, () => new Worker(workerUrl, { type: 'module' }))
+      var frames = new Array(totalFrames).fill(null)
+      var delay = 1000 / fps
+      var remaining = totalFrames, workerIndex = 0
+      var initMsg = { event: 'init', repeat: 0, delay, maxColors, width, height, format }
+      for (var w of workers) w.postMessage(initMsg)
+      await Promise.all(workers.map(waitForReady))
+      var { GIFEncoder } = await gifenc_p
+      var gif = GIFEncoder({ auto: false })
+
+      function waitForReady(worker) {
+        return new Promise(resolve => {
+          function handler(ev) {
+            if (ev.data === 'ready') {
+              worker.removeEventListener('message', handler)
+              resolve(ev)
+            }
+          }
+          worker.addEventListener('message', handler, { passive: true })
+        })
       }
 
-      var decoder = new VideoDecoder({
-        output: (frame) => {
-          var index = decoded;
-          var percent = totalChunks ? ++decoded / totalChunks : 0
-          $progress.style.width = Math.round(percent * 100) + '%';
-          var N = parseInt($drop.value) || 1
-          if (index % N === 0) {
-            if (!prev_frame) {
-              prev_frame = frame
-            } else {
-              delay = (frame.timestamp - prev_frame.timestamp) / 1000
-              ctx.drawImage(prev_frame, 0, 0, prev_frame.codedWidth, prev_frame.codedHeight)
-              gif.addFrame(canvas, { copy: true, delay })
-              prev_frame.close()
-              prev_frame = frame
+      function nextProgress() {
+        remaining--
+        progress((totalFrames - remaining) / totalFrames)
+      }
+
+      function waitForFrame(worker, frame) {
+        return new Promise(resolve => {
+          function handler(ev) {
+            if (ev.data[1] === frame) {
+              worker.removeEventListener('message', handler)
+              resolve(ev)
             }
-          } else {
-            frame.close()
           }
+          worker.addEventListener('message', handler, { passive: true })
+        })
+      }
+
+      return {
+        addFrame(data, frame) {
+          workerIndex = (workerIndex + 1) % workers.length
+          var worker = workers[workerIndex]
+          worker.postMessage([ data, frame ], [data.buffer])
+          frames[frame] = waitForFrame(worker, frame).then(ev => {
+            const [ data, frame ] = ev.data
+            nextProgress()
+            return data
+          })
         },
-        error: fail
+        async finish() {
+          var chunks = await Promise.all(frames)
+          gif.writeHeader()
+          for (var i = 0, len = chunks.length; i < len; ++i) {
+            gif.stream.writeBytesView(chunks[i])
+          }
+          gif.finish()
+          workers.forEach(w => w.terminate())
+          workers.length = 0
+          return gif.bytesView()
+        },
+      }
+    }
+
+    var encoder, decoder, mp4file, track, config, frames, raf
+
+    function onReady(info) {
+      track = info.videoTracks[0]
+      config = {
+        codec: track.codec,
+        codedHeight: track.video.height,
+        codedWidth: track.video.width,
+        description: getDescription(track),
+      }
+      $info.textContent = `${config.codec} @ ${config.codedWidth}x${config.codedHeight}`
+      $info.style.display = ''
+      decoder.configure(config)
+
+      mp4file.setExtractionOptions(track.id)
+      mp4file.start()
+      mp4file.flush()
+      decoder.flush().then(processFrames)
+
+      function getDescription(track) {
+        const trak = mp4file.getTrackById(track.id)
+        for (const entry of trak.mdia.minf.stbl.stsd.entries) {
+          if (entry.avcC || entry.hvcC) {
+            const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN)
+            if (entry.avcC) {
+              entry.avcC.write(stream)
+            } else {
+              entry.hvcC.write(stream)
+            }
+            return new Uint8Array(stream.buffer, 8)
+          }
+        }
+        return null
+      }
+    }
+
+    function onSamples(trackId, ref, samples) {
+      $info2.style.display = ''
+      $format_label.style.display = ''
+      $format.style.display = ''
+      for (const sample of samples) {
+        decoder.decode(new EncodedVideoChunk({
+          type: sample.is_sync ? 'key' : 'delta',
+          timestamp: 1e6 * sample.cts / sample.timescale,
+          duration: 1e6 * sample.duration / sample.timescale,
+          data: sample.data,
+        }))
+      }
+    }
+
+    async function loadFile(file) {
+      if (!file) return;
+      const buffer = await file.arrayBuffer()
+      buffer.fileStart = 0
+
+      frames = []
+      decoder?.close()
+      decoder = new VideoDecoder({
+        output(frame) {
+          const canvas = document.createElement('canvas')
+          canvas.width = frame.displayWidth
+          canvas.height = frame.displayHeight
+          canvas.getContext('2d').drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight)
+          canvas.timestamp = frame.timestamp // microseconds, (/ 1000) to get miliseconds
+          frame.close() // ! this is important, otherwise the decoder will block forever
+          frames.push(canvas)
+          raf ||= requestAnimationFrame(refreshInfo)
+        },
+        error: console.error,
       })
 
-      var mp4 = MP4Box.createFile()
-      mp4.onError = fail;
-      mp4.onReady = (info) => {
-        var track = info.videoTracks[0]
-        var config = {
-          codec: track.codec,
-          codedWidth: track.video.width,
-          codedHeight: track.video.height,
-          description: getDescription(mp4, track),
+      mp4file = MP4Box.createFile()
+      mp4file.onError = console.error
+      mp4file.onReady = onReady
+      mp4file.onSamples = onSamples
+
+      mp4file.appendBuffer(buffer)
+      mp4file.flush()
+    }
+
+    function refreshInfo() {
+      $info2.textContent = `(~${frames.length} frames)`
+      raf = 0
+    }
+
+    function processFrames() {
+      $info2.textContent = `(${frames.length} frames)`
+      cancelAnimationFrame(raf)
+
+      $fps.style.display = ''
+      $run.style.display = ''
+    }
+
+    $file_label.ondragover = function onDragOver(ev) {
+      ev.preventDefault()
+      $file_label.classList.add('active')
+    }
+    $file_label.ondrop = function onDrop(ev) {
+      ev.preventDefault()
+      $file_label.classList.remove('active')
+      loadFile(ev.dataTransfer.files[0])
+    }
+    $file.oninput = function onInput() {
+      loadFile(this.files[0])
+    }
+
+    $run.onclick = async function run() {
+      encoder = await createWorkerEncoder({
+        totalFrames: frames.length,
+        fps: parseInt($fps.value),
+        format: $format.value,
+        width: config.codedWidth,
+        height: config.codedHeight,
+        progress(p) {
+          $progress.style.width = Math.round(p * 80) + '%'
+          $progress.style.opacity = 1
         }
+      })
 
-        $info.textContent = `codec=${config.codec}, size=${config.codedWidth}x${config.codedHeight}`
+      console.time('gifenc')
+      var tick = Promise.resolve()
+      for (var i = 0, len = frames.length; i < len; ++i) {
+        const frame = frames[i]
+        const { data } = frame.getContext('2d').getImageData(0, 0, frame.width, frame.height)
+        encoder.addFrame(data, i)
+        await tick
+      }
+      console.timeEnd('gifenc')
 
-        canvas.width = config.codedWidth
-        canvas.height = config.codedHeight
+      var buffer = await encoder.finish()
+      var blob = new Blob([buffer], { type: 'image/gif' })
 
-        gif = new GIF({
-          workers: navigator.hardwareConcurrency || 1,
-          background: 'transparent',
-          width: config.codedWidth,
-          height: config.codedHeight,
+      if ($gifsicle.checked) {
+        $progress.style.width = '85%'
+        $progress.style.opacity = 1
+
+        var gifsicle = await gifsicle_p
+        $progress.style.width = '95%'
+        console.time('gifsicle')
+        var [file] = await gifsicle.default.run({
+          input: [{ file: blob, name: 'in.gif' }],
+          command: ["in.gif " + $options.value + " -o /out/out.gif"],
         })
-        gif.on('progress', (percent) => {
-          $progress.style.width = Math.round(percent * 100) + '%';
-          if (percent === 1) $progress.style.opacity = 0;
-        });
-        gif.on('finished', async (blob) => {
-          $status.textContent = 'Optimizing ...'
-          var gifsicle = await gifsicle_p
-          var [file] = await gifsicle.default.run({
-            input: [{ file: blob, name: 'in.gif' }],
-            command: ["in.gif " + $options.value + " -o /out/out.gif"],
-          })
-          $status.textContent = 'Done.'
-          $output.src = URL.createObjectURL(file);
-        });
+        console.timeEnd('gifsicle')
 
-        decoder.configure(config)
-
-        mp4.setExtractionOptions(track.id)
-        mp4.start()
+        blob = file
       }
-      mp4.onSamples = async (id, ref, samples) => {
-        totalChunks += samples.length
-        for (var sample of samples) {
-          var chunk = new EncodedVideoChunk({
-            type: sample.is_sync ? 'key' : 'delta',
-            timestamp: 1e6 * sample.cts / sample.timescale,
-            duration: 1e6 * sample.duration / sample.timescale,
-            data: sample.data
-          })
-          decoder.decode(chunk)
-        }
-        await decoder.flush()
-        decoder.close()
-        run_gif()
-      }
-      var buffer = await file.arrayBuffer()
-      buffer.fileStart = 0
-      mp4.appendBuffer(buffer)
-      mp4.flush()
-      $status.textContent = 'Decoding ...'
-    }
 
-    function getDescription(mp4, track) {
-      var t = mp4.getTrackById(track.id)
-      for (var entry of t.mdia.minf.stbl.stsd.entries) {
-        if (entry.avcC || entry.hvcC) {
-          var stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN)
-          if (entry.avcC) {
-            entry.avcC.write(stream)
-          } else {
-            entry.hvcC.write(stream)
-          }
-          return new Uint8Array(stream.buffer, 8)
-        }
-      }
-      throw new Error("avcC or hvcC not found")
-    }
+      $output.src = URL.createObjectURL(blob);
 
-    function fail(err) {
-      $error.textContent = `${err.name}: ${err.message}`
-      $error.style.display = ''
-      throw err;
-    }
-
-    $run.onclick = handle.bind($file)
-
-    if (!window.VideoDecoder) {
-      $file.oninput = null
-      $content.style.display = 'none'
-      $not_supported.style.display = ''
+      $progress.style.width = '100%'
+      $progress.style.opacity = 0
     }
   </script>
 </body>
