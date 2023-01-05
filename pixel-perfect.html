@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Pixel Perfect Drawing</title>
+  <style>
+    canvas { border: 1px solid var(--control); }
+  </style>
+</head>
+<body>
+  <h1 class="title">Pixel Perfect Drawing</h1>
+
+  <section>
+    <div style="padding-bottom: 8px;">
+      <input id="r" type="checkbox" checked>
+      <label for="r">show deleted points in red</label>
+    </div>
+    <canvas id="c"></canvas>
+  </section>
+
+  <script>
+    var width = 600, height = 400, cell = 10, semi_cell = cell / 2, path = null, raf = 0
+
+    c.width = width * devicePixelRatio
+    c.height = height * devicePixelRatio
+    c.style.width = width + 'px'
+    c.style.height = height + 'px'
+
+    var ctx = c.getContext('2d')
+    ctx.scale(devicePixelRatio, devicePixelRatio)
+
+    c.onpointerdown = ev => {
+      c.setPointerCapture(ev.pointerId)
+      c.onpointermove = draw
+      path = []
+    }
+
+    c.onpointerup = _ => {
+      c.onpointermove = null
+      path = null
+    }
+
+    function draw(ev) {
+      if (ev.getCoalescedEvents) {
+        for (let p of ev.getCoalescedEvents()) draw1(p)
+      } else {
+        draw1(ev)
+      }
+    }
+
+    function draw1({ offsetX: x, offsetY: y }) {
+      x = Math.floor((x + semi_cell) / cell)
+      y = Math.floor((y + semi_cell) / cell)
+      let p = path.at(-1)
+      if (p && p.x === x && p.y === y);
+      else path.push({ x, y })
+      update()
+    }
+
+    function update() {
+      if (raf) return;
+      raf = requestAnimationFrame(refresh)
+    }
+
+    function refresh() {
+      raf = 0
+      ctx.clearRect(0, 0, c.width, c.height)
+      if (!path || path.length === 0) return;
+
+      let lastX, lastY, filled = []
+      const push = (x, y) => {
+        let p = filled.at(-1)
+        if (!p || p.x !== x || p.y !== y) {
+          filled.push({ x, y, removed: false })
+          // pixel perfect algorithm runs here:
+          // find 'L' corner points and remove them
+          for (let i = 1; i + 1 < filled.length; ++i) {
+            if (true
+              && (filled[i - 1].x === filled[i].x || filled[i - 1].y === filled[i].y)
+              && (filled[i + 1].x === filled[i].x || filled[i + 1].y === filled[i].y)
+              &&  filled[i - 1].x !== filled[i + 1].x
+              &&  filled[i - 1].y !== filled[i + 1].y
+            ) {
+              filled[i].removed = true
+            }
+          }
+        }
+      }
+
+      for (let { x, y } of path) {
+        // Bresenham's line algorithm from (lastX, lastY) to (x, y)
+        if (lastX !== undefined) {
+          let dx =  Math.abs(x - lastX), sx = lastX < x ? 1 : -1
+          let dy = -Math.abs(y - lastY), sy = lastY < y ? 1 : -1
+          for (let error = dx + dy; true;) {
+            push(lastX, lastY)
+            if (lastX === x && lastY === y) break;
+            let e2 = error * 2
+            if (e2 >= dy) {
+              if (lastX === x) break;
+              error += dy
+              lastX += sx
+            }
+            if (e2 <= dx) {
+              if (lastY === y) break;
+              error += dx
+              lastY += sy
+            }
+          }
+        } else {
+          lastX = x
+          lastY = y
+        }
+      }
+
+      if (r.checked) {
+        ctx.fillStyle = '#f00'
+        ctx.beginPath()
+        for (let { x, y, removed } of filled)
+          if (removed)
+            ctx.rect(x * cell, y * cell, cell, cell)
+        ctx.fill()
+      }
+
+      ctx.fillStyle = prefersDarkMediaQueryList.matches ? '#fff' : '#000'
+      ctx.beginPath()
+      for (let { x, y, removed } of filled)
+        if (!removed)
+          ctx.rect(x * cell, y * cell, cell, cell)
+      ctx.fill()
+    }
+  </script>
+</body>
+</html>
