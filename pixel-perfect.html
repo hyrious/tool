@@ -8,7 +8,7 @@
   <script src="theme.js"></script>
   <title>Pixel Perfect Drawing</title>
   <style>
-    canvas { border: 1px solid var(--control); }
+    canvas { border: 1px solid var(--control); touch-action: none; }
   </style>
 </head>
 <body>
@@ -23,7 +23,7 @@
   </section>
 
   <script>
-    var width = 600, height = 400, cell = 10, semi_cell = cell / 2, path = null, raf = 0
+    var width = 600, height = 400, cell = 5, semi_cell = cell / 2, path = null, raf = 0
 
     c.width = width * devicePixelRatio
     c.height = height * devicePixelRatio
@@ -41,8 +41,9 @@
 
     c.onpointerup = _ => {
       c.onpointermove = null
-      path = null
     }
+
+    r.oninput = refresh
 
     function draw(ev) {
       if (ev.getCoalescedEvents) {
