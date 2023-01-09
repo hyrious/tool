@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Octree</title>
+  <style>
+    .content label {
+      display: inline-block;
+      border: 1px dashed var(--control);
+      border-radius: 6px;
+      padding: 3rem;
+      cursor: pointer;
+    }
+    .controls {
+      border: 1px solid var(--control);
+      border-radius: 6px;
+      padding: 1rem;
+    }
+    output {
+      display: flex;
+      align-items: center;
+    }
+    span {
+      padding: 0 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Octree</h1>
+
+  <section class="controls">
+    <label for="mc">Max Colors</label>
+    <input id="mc" type="number" value="256">
+  </section>
+
+  <section class="content">
+    <input id="f" type="file" accept="image/*" style="display: none">
+    <label for="f">drop image here</label>
+  </section>
+
+  <section>
+    <output id="o"></output>
+  </section>
+
+  <script>
+    f.labels[0].ondragover = e => e.preventDefault()
+    f.labels[0].ondrop = e => e.preventDefault() ^ update(e.dataTransfer.files[0])
+    f.oninput = _ => update(f.files[0])
+
+    function update(file) {
+      if (!file) return;
+      let img = new Image()
+      img.data = file.stream()
+      img.type = file.type
+      img.src = URL.createObjectURL(file)
+      img.onload = _ => URL.revokeObjectURL(img.src) ^ main(img)
+    }
+
+    function getPixels(img) {
+      const canvas = document.createElement('canvas')
+      const w = canvas.width = img.naturalWidth
+      const h = canvas.height = img.naturalHeight
+      const c = canvas.getContext('2d')
+      c.drawImage(img, 0, 0)
+      return c.getImageData(0, 0, w, h)
+    }
+
+    function main(img) {
+      // Reference:
+      // https://observablehq.com/@tmcw/octree-color-quantization
+      // https://github.com/NickeManarin/ScreenToGif/blob/-/ScreenToGif.Util/Codification/Gif/Encoder/Quantization/OctreeQuantizer.cs
+      // https://github.com/olvb/colorcrush
+
+      const { width, height, data } = getPixels(img)
+      const pixels = new DataView(data.buffer)
+
+      class Color {
+        static isTransparent(hex) {
+          return hex & 0xFF === 0
+        }
+        static diff(x, y) {
+          const r = x.R - y.R, g = x.G - y.G, b = x.B - y.B
+          return 3 * r * r + 6 * g * g + b * b
+        }
+        static encode(a) {
+          return a.R << 0o30 | a.G << 0o20 | a.B << 0o10 | 0xFF
+        }
+        constructor(hex) {
+          this.R = hex >>> 0o30 & 0xFF
+          this.G = hex >>> 0o20 & 0xFF
+          this.B = hex >>> 0o10 & 0xFF
+        }
+        index(level) {
+          const mask = 0b10000000 >>> level
+          let index = 0
+          if (this.R & mask) index |= 0b100;
+          if (this.G & mask) index |= 0b010;
+          if (this.B & mask) index |= 0b001;
+          return index
+        }
+      }
+
+      class Node {
+        constructor() {
+          this.R = this.G = this.B = this.pixelCount = this.error = 0
+          this.isLeaf = false
+          this.children = new Array(8)
+        }
+        addColor(color) {
+          this.R += color.R
+          this.G += color.G
+          this.B += color.B
+          this.pixelCount++
+        }
+        reduce() {
+          let deleted = 0
+          for (let i = 0, child; i < 8; ++i) {
+            child = this.children[i]
+            if (child) {
+              if (!child.isLeaf) deleted += child.reduce();
+              this.children[i] = undefined
+              deleted++
+            }
+          }
+          this.isLeaf = true
+          return Math.max(0, deleted - 1)
+        }
+      }
+
+      let leavesCount = 0
+      const root = new Node()
+
+      for (let i = 0, len = width * height; i < len; ++i) {
+        const hex = pixels.getUint32(i << 2)
+        if (Color.isTransparent(hex)) continue;
+        const color = new Color(hex), x = i % width, y = i / width | 0
+        for (let j = 0, node = root, k, child; j <= 8; ++j) {
+          node.addColor(color)
+          if (j === 8) continue;
+          k = color.index(j)
+          child = node.children[k]
+          if (child === undefined) {
+            node.children[k] = child = new Node()
+            if (j + 1 === 8) {
+              child.isLeaf = true
+              leavesCount++
+            }
+          }
+          node = child
+        }
+      }
+
+      function computeError(node) {
+        for (let i = 0, child; i < 8; ++i) {
+          child = node.children[i]
+          if (child) {
+            node.error += Color.diff(node, child)
+            if (!child.isLeaf)
+              computeError(child)
+          }
+        }
+      }
+      computeError(root)
+
+      function flatten(node, into) {
+        into.push(node)
+        for (let i = 0, child; i < 8; ++i) {
+          child = node.children[i]
+          if (child && !child.isLeaf) {
+            flatten(child, into)
+          }
+        }
+      }
+      const nodes = []
+      flatten(root, nodes)
+      nodes.sort((a, b) => b.error - a.error || a.pixelCount - b.pixelCount)
+
+      const MAX_COLORS = mc.valueAsNumber
+      for (let node; leavesCount > MAX_COLORS;) {
+        node = nodes.pop()
+        if (node.isLeaf) continue;
+        leavesCount -= node.reduce()
+      }
+
+      function leaves(node, into) {
+        if (node.isLeaf) into.push(node);
+        else for (let i = 0, child; i < 8; ++i) {
+          child = node.children[i]
+          if (child) leaves(child, into);
+        }
+      }
+      const palette = []
+      leaves(root, palette)
+      palette.sort((a, b) => b.pixelCount - a.pixelCount || a.error - b.error)
+      palette.forEach(p => {
+        p.R /= p.pixelCount
+        p.G /= p.pixelCount
+        p.B /= p.pixelCount
+      })
+
+      const canvas = document.createElement('canvas')
+      canvas.id = 'palette'
+      canvas.style.imageRendering = 'pixelated'
+      canvas.style.zoom = '5'
+      canvas.width = canvas.height = 16
+      const c = canvas.getContext('2d')
+      for (let i = 0, len = palette.length; i < len; ++i) {
+        const p = palette[i], x = i % 16, y = i >> 4
+        c.fillStyle = `rgb(${[p.R, p.G, p.B]})`
+        c.fillRect(x, y, 1, 1)
+      }
+
+      o.innerHTML = ''
+      img.style.imageRendering = 'pixelated'
+      o.appendChild(img)
+      o.appendChild(document.createElement('span')).textContent = '—'
+      o.appendChild(canvas)
+
+      function paletteIndex(color) {
+        let mindiff = Number.MAX_SAFE_INTEGER, index = -1
+        for (let i = 0, len = palette.length; i < len; ++i) {
+          const p = palette[i], diff = Color.diff(p, color)
+          if (mindiff > diff) {
+            mindiff = diff
+            index = i
+          }
+        }
+        return index
+      }
+
+      for (let i = 0, len = width * height; i < len; ++i) {
+        const hex = pixels.getUint32(i << 2)
+        if (Color.isTransparent(hex)) continue;
+        const color = new Color(hex)
+        const index = paletteIndex(color)
+        if (index !== -1) {
+          pixels.setUint32(i << 2, Color.encode(palette[index]))
+        } else {
+          throw new Error('wtf')
+        }
+      }
+      const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), width, height)
+      const canvas2 = document.createElement('canvas')
+      canvas2.width = width
+      canvas2.height = height
+      canvas2.style.imageRendering = 'pixelated'
+      const c2 = canvas2.getContext('2d')
+      c2.putImageData(imageData, 0, 0)
+
+      o.appendChild(document.createElement('span')).textContent = '→'
+      o.appendChild(canvas2)
+
+      console.log(palette)
+    }
+  </script>
+</body>
+</html>
