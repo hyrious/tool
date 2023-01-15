@@ -16,13 +16,9 @@
       background-color: #f1f1f1;
     }
     .bubble {
-      margin: 10px 0;
       padding: 10px;
       display: flex;
       text-rendering: geometricPrecision;
-    }
-    .bubble.me {
-      flex-direction: row-reverse;
     }
     .col {
       font-size: 0;
@@ -53,6 +49,7 @@
       font-size: 13px;
       padding: 11px;
       border-radius: 6px;
+      overflow: hidden;
       background-color: #d8d8d8;
       color: #222;
     }
@@ -67,14 +64,28 @@
       background-color: #d8d8d8;
       clip-path: polygon(0% 0%, 100% 100%, 100% 18%);
     }
+    .message.image {
+      margin-top: 5px;
+      padding: 0;
+    }
+    .bubble.me {
+      flex-direction: row-reverse;
+    }
+    .bubble.me .col2 {
+      align-items: flex-end;
+    }
+    .bubble.me .col2::after {
+      top: 11px;
+      left: calc(100% - 14px);
+      clip-path: polygon(100% 50%, 0% 100%, 0% 0%);
+    }
+    .col2:has(.message.image)::after {
+      display: none;
+    }
   </style>
 </head>
 <body>
   <h1 class="title">QQ 对话框制作</h1>
-
-  <section>
-    <div>目前只模拟了 PC QQ，根据浏览器不同会导致很大的渲染差异，请自己随时打开控制台调整 CSS</div>
-  </section>
 
   <section>
     <div class="list">
@@ -83,30 +94,43 @@
           <img class="avatar" src="http://placekitten.com/64/64">
         </div>
         <div class="col2">
-          <h2 class="name" contenteditable>昵称</h2>
-          <p class="message" contenteditable>喵喵喵喵喵喵喵喵喵</p>
+          <h2 class="name" contenteditable>文本消息</h2>
+          <p class="message" contenteditable>目前只模拟了 PC QQ，根据浏览器不同会导致很大的渲染差异，请自己随时打开控制台调整 CSS</p>
+        </div>
+      </article>
+      <article class="bubble">
+        <div class="col">
+          <img class="avatar" src="http://placekitten.com/64/64">
+        </div>
+        <div class="col2">
+          <h2 class="name" contenteditable>纯图片消息</h2>
+          <p class="message image">
+            <img src="http://placekitten.com/400/300">
+          </p>
+        </div>
+      </article>
+      <article class="bubble me">
+        <div class="col">
+          <img class="avatar" src="http://placekitten.com/64/64">
+        </div>
+        <div class="col2">
+          <p class="message" contenteditable>喵喵喵</p>
         </div>
       </article>
     </div>
   </section>
 
   <script>
-    var av = document.querySelector('.avatar')
-    // av.onclick = async function paste() {
-    //   for (var item of await navigator.clipboard.read()) {
-    //     if (item.types.includes('image/png')) {
-    //       this.src = URL.createObjectURL(await item.getType('image/png'))
-    //       break
-    //     }
-    //   }
-    // }
-    av.ondragover = function dragging(ev) {
-      ev.preventDefault()
+    function dropImage(el) {
+      el.ondragover = function dragging(ev) {
+        ev.preventDefault()
+      }
+      el.ondrop = function drop(ev) {
+        ev.preventDefault()
+        this.src = URL.createObjectURL(ev.dataTransfer.files[0])
+      }
     }
-    av.ondrop = function drop(ev) {
-      ev.preventDefault()
-      this.src = URL.createObjectURL(ev.dataTransfer.files[0])
-    }
+    document.querySelectorAll('img[src*=placekitten]').forEach(dropImage)
   </script>
 </body>
 </html>
