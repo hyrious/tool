@@ -124,7 +124,7 @@
     autosize($code)
 
     const Minifiers = {
-        rollup: import('https://esm.sh/rollup'),
+        rollup: import('https://cdn.jsdelivr.net/npm/@rollup/browser/dist/es/rollup.browser.js'),
         esbuild: import('https://esm.sh/esbuild-wasm').then(async ({ default: esbuild }) => {
             await esbuild.initialize({ wasmURL: `https://cdn.jsdelivr.net/npm/esbuild-wasm@${esbuild.version}/esbuild.wasm` })
             await esbuild.transform('let a = 1')
