@@ -48,9 +48,19 @@
             transform: translate(-50%, -50%);
         }
         .hint {
+            color-scheme: dark;
+            color: #fff;
             position: fixed;
+            padding: .5rem 1rem;
             left: 0; bottom: 0; width: 100%;
+            opacity: .8;
             text-align: center;
+        }
+        .dimension {
+            font-variant-numeric: tabular-nums;
+            padding-right: 1rem;
+            display: inline-flex;
+            align-items: center;
         }
         .btn-close {
             position: absolute;
@@ -63,7 +73,15 @@
             transition: background .3s;
             cursor: pointer;
         }
-        .btn-close:hover {
+        .btn-resize {
+            border: 0;
+            padding: 8px 12px;
+            background: transparent;
+            transition: background .3s;
+            margin-left: .5rem;
+            cursor: pointer;
+        }
+        .btn-close:hover, .btn-resize:hover {
             background: rgba(127, 127, 127, 0.5);
         }
         .hidden {
@@ -87,14 +105,15 @@
 
     <div id="$preview_div" class="preview hidden">
         <img id="$preview" src="">
-        <p class="hint">
-            Image has been copied to clipboard.<br>
-            If not, you can manually right click the image to copy it.
-        </p>
+        <p id="$hint" class="hint"></p>
         <button id="$close" class="btn-close" title="close">
             <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--material-symbols" width="32" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 24 24"><path fill="#fff" d="M6.4 19L5 17.6l5.6-5.6L5 6.4L6.4 5l5.6 5.6L17.6 5L19 6.4L13.4 12l5.6 5.6l-1.4 1.4l-5.6-5.6Z"></path></svg>
         </button>
     </div>
+
+    <svg style="display: none;">
+        <symbol viewbox="0 0 24 24" id="mdi-close"><path fill="currentColor" d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41Z"></path></symbol>
+    </svg>
 
     <script type="module">
         $img.ondragover = $preview_div.ondragover = function on_dragover(ev) {
@@ -113,12 +132,32 @@
             if (!file) return;
             $preview_div.classList.remove('hidden')
 
+            function h(t, body = '') {
+                const i = t.indexOf('.')
+                let c
+                if (i !== -1) {
+                    c = t.slice(i + 1).replace(/\./g, ' ')
+                    t = t.slice(0, i)
+                }
+                return '<' + t + (c ? ' class="' + c + '"' : '') + '>' + body + '</' + t + '>'
+            }
+
+            function make_hint(width = $preview.naturalWidth, height = $preview.naturalHeight) {
+                $hint.innerHTML = (
+                    h('span.dimension', width + '<svg width="16" height="16"><use href="#mdi-close"/></svg>' + height) +
+                    h('input.resize') +
+                    h('button.btn-resize', 'RESIZE')
+                )
+                $hint.querySelector('.resize').placeholder = '1.0'
+            }
+
             let resolve, p
             p = new Promise(r => resolve = r)
             $preview.onload = resolve
             $preview.src = URL.createObjectURL(file)
             try {
                 await p
+                make_hint()
                 const data = [new ClipboardItem({ [file.type]: file })]
                 await navigator.clipboard.write(data)
                 return
@@ -132,16 +171,41 @@
             const ctx = canvas.getContext('2d')
             ctx.drawImage($preview, 0, 0, width, height)
 
-            canvas.toBlob(async blob => {
-                if (!blob) throw new Error('canvas.toBlob() failed');
+            function finish() {
+                canvas.toBlob(async blob => {
+                    if (!blob) throw new Error('canvas.toBlob() failed');
 
-                const data = [new ClipboardItem({ [blob.type]: blob })]
-                await navigator.clipboard.write(data)
+                    const data = [new ClipboardItem({ [blob.type]: blob })]
+                    await navigator.clipboard.write(data)
 
-                // Fix the preview image, since we do not support GIF
-                URL.revokeObjectURL($preview.src)
-                $preview.src = URL.createObjectURL(blob)
-            }, 'image/png', 1)
+                    // Fix the preview image, since we do not support GIF
+                    URL.revokeObjectURL($preview.src)
+                    $preview.src = URL.createObjectURL(blob)
+
+                    make_hint(canvas.width, canvas.height)
+                }, 'image/png', 1)
+            }
+
+            finish()
+
+            const original = $preview
+            $hint.onclick = function action(ev) {
+                if (ev.target.classList.contains('btn-resize')) {
+                    const mul = +$hint.querySelector('.resize').value
+                    if (Number.isFinite(mul)) {
+                        const width  = ~~(original.naturalWidth  * mul)
+                        const height = ~~(original.naturalHeight * mul)
+                        if (0 < width && width <= 3000 && 0 < height && height <= 3000) {
+                            Object.assign(canvas, { width, height })
+                            ctx.clearRect(0, 0, width, height)
+                            ctx.drawImage(original, 0, 0, width, height)
+                            finish()
+                        } else {
+                            alert('too big')
+                        }
+                    }
+                }
+            }
         }
     </script>
 </body>
