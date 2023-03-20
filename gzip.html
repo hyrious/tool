@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="style.css">
+    <script src="favicon.js"></script>
+    <script src="theme.js"></script>
+    <title>Gzip</title>
+    <style>
+        section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-gap: 5px;
+        }
+        textarea {
+            padding: .5em;
+            font-family: monospace;
+            font-size: 1rem;
+            resize: none;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Gzip</h1>
+
+    <section>
+        <textarea id="$input" rows="20" placeholder="input" autocomplete="off" spellcheck="false"></textarea>
+        <textarea id="$output" rows="20" placeholder="base64(gzip(input))" autocomplete="off" spellcheck="false"></textarea>
+    </section>
+
+    <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.5/base64.min.js"></script>
+    <script type="module">
+        $input.disabled = $output.disabled = true
+
+        let encode, decode
+        if (window.CompressionStream && window.DecompressionStream) {
+            encode = function encode(data) {
+                const cs = new CompressionStream('gzip')
+                const writer = cs.writable.getWriter()
+                writer.write(data)
+                writer.close()
+                return new Response(cs.readable).arrayBuffer()
+            }
+            decode = function decode(data) {
+                const ds = new DecompressionStream('gzip')
+                const writer = ds.writable.getWriter()
+                writer.write(data)
+                writer.close()
+                return new Response(ds.readable).arrayBuffer()
+            }
+        } else {
+            const {gzip, inflate} = await import("https://esm.sh/pako")
+            encode = gzip
+            decode = inflate
+        }
+
+        $input.disabled = $output.disabled = false
+
+        let str = {
+            encoder: new TextEncoder(),
+            decoder: new TextDecoder(),
+        }
+
+        $input.oninput = async function do_encode() {
+            let buffer = await encode(str.encoder.encode($input.value))
+            $output.value = Base64.fromUint8Array(new Uint8Array(buffer))
+        }
+
+        $output.oninput = async function do_decode() {
+            let array = Base64.toUint8Array($output.value)
+            let buffer = await decode(array)
+            $input.value = str.decoder.decode(buffer)
+        }
+    </script>
+</body>
+</html>
