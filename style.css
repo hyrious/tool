@@ -1,32 +1,38 @@
-@import 'https://cdn.jsdelivr.net/npm/modern-normalize';
+@import "https://cdn.jsdelivr.net/npm/modern-normalize";
+
+html {
+  height: 100%;
+}
 
 body {
-    background-color: var(--back);
-    color: var(--front);
-    transition: background-color 2s, color 1s;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  background-color: var(--back);
+  color: var(--front);
+  transition: background-color 2s, color 1s;
 }
 
 input {
-    background-color: var(--back);
-    color: var(--front);
-    border: 0;
-    border-bottom: .1em solid var(--front);
-    outline: none;
+  background-color: var(--back);
+  color: var(--front);
+  border: 0;
+  border-bottom: 0.1em solid var(--front);
+  outline: none;
 }
 
 section {
-    max-width: 90%;
-    margin: 0 auto;
-    padding: 10px 0;
+  margin: 0 5%;
+  padding: 10px 0;
 }
 
 a {
-    color: var(--link);
+  color: var(--link);
 }
 
 .title {
-    font-family: monospace;
-    max-width: 90%;
-    margin: 0 auto;
-    padding: 40px 0 20px;
+  font-family: monospace;
+  margin: 0 5%;
+  padding: 40px 0 20px;
 }
