@@ -57,6 +57,10 @@
 <body>
   <h1 class="title">MP4 to GIF</h1>
 
+  <section id="$error" style="display: none">
+    <p id="$error_text" class="error"></p>
+  </section>
+
   <section id="$not_supported" style="display: none">
     <p class="warning">
       Your browser does not support <a href="https://caniuse.com/webcodecs" rel="noreferrer" target="_blank">VideoDecoder</a>,
@@ -128,6 +132,7 @@
     async function loadFile(files) {
       if (files && files.length === 1) {
         const buffer = await files[0].arrayBuffer()
+        hideError()
         startDecoding(buffer)
       }
     }
@@ -141,6 +146,15 @@
       }
     }
 
+    function showError(err) {
+      $error_text.textContent = err.message
+      $error.style.display = ''
+    }
+
+    function hideError() {
+      $error.style.display = 'none'
+    }
+
     let raf, frames, decoder, mp4file, track, config
 
     function onReady(info) {
@@ -152,7 +166,13 @@
         description: getDescription(track),
       }
       updateDecoding1()
-      decoder.configure(config)
+      try {
+        decoder.configure(config)
+      } catch (err) {
+        $error_text.textContent = err.message
+        $error.style.display = ''
+        return;
+      }
 
       mp4file.setExtractionOptions(track.id)
       mp4file.start()
