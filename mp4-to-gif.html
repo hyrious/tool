@@ -49,6 +49,9 @@
     .output {
       flex: 1;
     }
+    sub {
+      font-weight: normal;
+    }
     img {
       max-width: 100%;
     }
@@ -89,6 +92,7 @@
       throw new Error('VideoDecoder is not supported, refuse to work.')
     }
 
+    const options = Object.fromEntries(Array.from(new URLSearchParams(location.search)))
     const gifenc_p = import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js')
 
     $file_label.ondragover = function ondragover(ev) {
@@ -216,10 +220,11 @@
       decoder && decoder.close()
       decoder = new VideoDecoder({
         output(frame) {
+          const scale = Number(options.scale) || 1
           const canvas = document.createElement('canvas')
-          canvas.width = frame.displayWidth
-          canvas.height = frame.displayHeight
-          canvas.getContext('2d').drawImage(frame, 0, 0, frame.displayWidth, frame.displayHeight)
+          canvas.width = frame.displayWidth * scale
+          canvas.height = frame.displayHeight * scale
+          canvas.getContext('2d').drawImage(frame, 0, 0, canvas.width, canvas.height)
           canvas.timestamp = frame.timestamp // microseconds, (/ 1000) to get miliseconds
           frame.close() // ! this is important, otherwise the decoder will block forever
           frames.push(canvas)
