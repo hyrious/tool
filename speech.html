@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Speech Recognition</title>
+  <style>
+    .warning {
+      margin: 0;
+      padding: 1rem;
+      background-color: rgba(255, 255, 0, 0.2);
+    }
+    select, textarea, button {
+      color: var(--front);
+      border-color: var(--control);
+      background-color: var(--back);
+    }
+    textarea {
+      padding: .5em;
+      font-family: monospace;
+      resize: none;
+    }
+    select {
+      padding: .25em;
+      border: 2px solid var(--control);
+      border-radius: 3px;
+    }
+    button {
+      padding: .25em;
+      border: 2px solid var(--control);
+      border-radius: 3px;
+    }
+    button:active, button.active {
+      border-color: var(--front);
+      background-color: var(--control);
+    }
+    .content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .output {
+      flex: 1;
+      overflow: auto;
+    }
+    .item {
+      margin: .5rem 0;
+      padding: .5rem;
+      background-color: var(--control);
+    }
+    .input {
+      display: flex;
+      gap: .3rem;
+    }
+    .input button {
+      padding: .25em 1.5em;
+    }
+    .flex-1 {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Speech Recognition</h1>
+
+  <section id="$not_supported" style="display: none">
+    <p class="warning">
+      Your browser does not support <a href="https://caniuse.com/speech-recognition" rel="noreferrer" target="_blank">SpeechRecognition</a>,
+      please use the latest chrome to open this page.
+    </p>
+  </section>
+
+  <section class="content">
+    <div class="input">
+      <select id="$lang">
+        <option value="zh-CN">Chinese</option>
+        <option value="en-US">English</option>
+      </select>
+      <button class="flex-1" id="$btn">Start</button>
+      <button id="$clear">Clear</button>
+    </div>
+    <div id="$output" class="output"></div>
+  </section>
+
+  <script type="module">
+    try {
+      var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+      var recognition = new SpeechRecognition()
+    } catch (err) {
+      $not_supported.style.display = ''
+      throw err;
+    }
+    recognition.continuous = true
+    recognition.interimResults = true
+
+    var recognizing = false
+
+    function refresh() {
+      recognition.abort()
+      try { recognition.start() } catch (e) { console.error(e) }
+    }
+
+    recognition.onstart = function startRecognition() {
+      console.log('Recognition start')
+      $btn.textContent = 'Stop'
+    }
+    recognition.onerror = function recognitionError(event) {
+      console.log('Recognition error: ' + (event.message || event.error))
+      if (['no-speech', 'audio-capture', 'network', 'bad-grammar'].includes(event.error)) {
+        refresh()
+      }
+    }
+    recognition.onend = function recognitionEnd() {
+      console.log('Recognition end')
+      $btn.textContent = 'Start'
+    }
+
+    recognition.onresult = function onResult(event) {
+      for (var i = event.resultIndex; i < event.results.length; ++i) {
+        var e = event.results[i]
+        append(e[0].transcript, e[0].confidence, e.isFinal)
+      }
+    }
+
+    $lang.value = navigator.language.includes('zh') ? 'zh-CN' : 'en-US'
+    $btn.onclick = function toggle() {
+      if (recognizing) {
+        recognizing = false
+        recognition.stop()
+      } else {
+        recognizing = true
+        recognition.lang = $lang.value
+        recognition.start()
+      }
+    }
+
+    var current
+    $clear.onclick = function clear() {
+      $output.innerHTML = ''
+      current = null
+    }
+
+    function append(text, confidence, isFinal) {
+      if (!current) {
+        current = document.createElement('p')
+        current.className = 'item'
+        $output.appendChild(current)
+      }
+      current.textContent = text
+      current.style.opacity = Math.min(confidence + 0.5, 1)
+      if (isFinal) {
+        current = null
+      }
+    }
+
+    Object.assign(window, {
+      recognition
+    })
+  </script>
+</body>
+</html>
