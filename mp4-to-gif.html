@@ -23,6 +23,10 @@
       padding: 0.5rem;
       background: var(--control);
     }
+    .prompt {
+      padding: 1em;
+      text-decoration: underline;
+    }
     .file {
       display: flex;
       align-items: center;
@@ -48,6 +52,9 @@
     }
     .output {
       flex: 1;
+      display: flex;
+      align-items: flex-start;
+      gap: 1ch;
     }
     sub {
       font-weight: normal;
@@ -78,10 +85,12 @@
 
   <section class="output">
     <img src="" id="$output">
+    <button id="$download" disabled hidden>Download</button>
   </section>
 
   <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
 
+  <script src="octree.js"></script>
   <script type="module">
     /// References:
     /// https://web.dev/webcodecs#decoding
@@ -159,7 +168,7 @@
       $error.style.display = 'none'
     }
 
-    let raf, frames, decoder, mp4file, track, config
+    let raf, frames, decoder, mp4file, track, config, knownColors, gifenc
 
     function onReady(info) {
       track = info.videoTracks[0]
@@ -259,11 +268,42 @@
       raf = 0
     }
 
-    function finishDecoding() {
+    async function finishDecoding() {
       decoding2.textContent = ` - ${frames.length} frames`
       window.__DEBUG__ = { frames, config, timestamps: frames.map(e => e.timestamp / 1e3) }
       console.debug(window.__DEBUG__)
+      gifenc = await gifenc_p
+      beforeEncodingGIF()
+    }
+
+    async function beforeEncodingGIF() {
+      console.time('prepare')
+
+      const { Octree } = octree
+      const tree = new Octree()
+      for (const canvas of frames) {
+        const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+        const { width, height } = imageData
+        const uin32 = new Uint32Array(imageData.data.buffer)
+        const step = Math.max(width, height) / 20 | 0
+        const len = width * height
+        for (let i = 0; i < len; i += step) {
+          tree.push(uin32[i])
+        }
+      }
+      const nodes = tree.get()
+      knownColors = nodes.map(c => [
+        (c.R < 0 ? 0 : c.R > 0xFF ? 0xFF : Math.round(c.R)),
+        (c.G < 0 ? 0 : c.G > 0xFF ? 0xFF : Math.round(c.G)),
+        (c.B < 0 ? 0 : c.B > 0xFF ? 0xFF : Math.round(c.B)),
+      ])
+
+      console.timeEnd('prepare')
       startEncodingGIF()
+    }
+
+    function clamp_round(value) {
+      value < 0 ? 0 : value > 255 ? 255 : Math.round(value)
     }
 
     async function startEncodingGIF() {
@@ -275,7 +315,7 @@
       let remainingFrames = totalFrames
       let frameIndex = 0
 
-      const { GIFEncoder } = await gifenc_p
+      const { GIFEncoder } = gifenc
       const gif = GIFEncoder({ auto: false })
       gif.writeHeader()
 
@@ -317,6 +357,7 @@
         next.postMessage({
           transparent: true,
           frame,
+          knownColors,
           delay: getDelay(frame),
           width: imageData.width,
           height: imageData.height,
@@ -344,12 +385,33 @@
 
       console.timeEnd('gifenc')
 
+      setProgress(0)
       finishEncodingGIF(gif.bytesView())
     }
 
     function finishEncodingGIF(buffer) {
       const blob = new Blob([buffer], { type: 'image/gif'})
       $output.src = URL.createObjectURL(blob)
+      $download.hidden = false
+      $download.disabled = false
+      $download.textContent = `Download (${prettySize(blob.size)})`
+    }
+
+    function prettySize(number) {
+      const UNITS = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
+      const exponent = Math.min(Math.floor(Math.log10(number) / 3), UNITS.length - 1);
+      number /= 1000 ** exponent;
+      number = number.toPrecision(3);
+      return number + ' ' + UNITS[exponent];
+    }
+
+    $download.onclick = function downloadGIF() {
+      const a = document.createElement('a')
+      a.href = $output.src
+      a.download = 'output.gif'
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
     }
   </script>
 </body>

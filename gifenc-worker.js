@@ -6,6 +6,7 @@ import {
   applyPalette,
   prequantize,
   GIFEncoder,
+  snapColorsToPalette,
   nearestColorIndexWithDistance,
 } from "https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js";
 
@@ -20,6 +21,7 @@ onmessage = function onmessage(ev) {
     width,
     height,
     delay,
+    knownColors,
     quantizeWithAlpha = true,
     backgroundColor = DEFAULT_BACKGROUND,
   } = opts;
@@ -35,9 +37,13 @@ onmessage = function onmessage(ev) {
 
   const uint8 = new Uint8Array(data.buffer);
 
-  prequantize(uint8, { roundRGB: 1, oneBitAlpha: true });
+  prequantize(uint8, { oneBitAlpha: true });
 
   const palette = quantize(uint8, maxColors, { format, oneBitAlpha: true });
+
+  if (knownColors) {
+    snapColorsToPalette(palette, knownColors);
+  }
 
   let transparentIndex = 0;
   if (transparent) {
