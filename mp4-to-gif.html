@@ -90,7 +90,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
 
-  <script src="octree.js"></script>
+  <!-- <script src="octree.js"></script> -->
   <script type="module">
     /// References:
     /// https://web.dev/webcodecs#decoding
@@ -277,28 +277,28 @@
     }
 
     async function beforeEncodingGIF() {
-      console.time('prepare')
+      // console.time('prepare')
 
-      const { Octree } = octree
-      const tree = new Octree()
-      for (const canvas of frames) {
-        const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
-        const { width, height } = imageData
-        const uin32 = new Uint32Array(imageData.data.buffer)
-        const step = Math.max(width, height) / 20 | 0
-        const len = width * height
-        for (let i = 0; i < len; i += step) {
-          tree.push(uin32[i])
-        }
-      }
-      const nodes = tree.get()
-      knownColors = nodes.map(c => [
-        (c.R < 0 ? 0 : c.R > 0xFF ? 0xFF : Math.round(c.R)),
-        (c.G < 0 ? 0 : c.G > 0xFF ? 0xFF : Math.round(c.G)),
-        (c.B < 0 ? 0 : c.B > 0xFF ? 0xFF : Math.round(c.B)),
-      ])
+      // const { Octree } = octree
+      // const tree = new Octree()
+      // for (const canvas of frames) {
+      //   const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
+      //   const { width, height } = imageData
+      //   const uin32 = new Uint32Array(imageData.data.buffer)
+      //   const step = Math.max(width, height) / 20 | 0
+      //   const len = width * height
+      //   for (let i = 0; i < len; i += step) {
+      //     tree.push(uin32[i])
+      //   }
+      // }
+      // const nodes = tree.get()
+      // knownColors = nodes.map(c => [
+      //   (c.R < 0 ? 0 : c.R > 0xFF ? 0xFF : Math.round(c.R)),
+      //   (c.G < 0 ? 0 : c.G > 0xFF ? 0xFF : Math.round(c.G)),
+      //   (c.B < 0 ? 0 : c.B > 0xFF ? 0xFF : Math.round(c.B)),
+      // ])
 
-      console.timeEnd('prepare')
+      // console.timeEnd('prepare')
       startEncodingGIF()
     }
 
