@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Identicon</title>
+  <style>
+    .content {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-gap: 8px;
+      align-items: center;
+      font-family: monospace;
+      font-size: 18px;
+    }
+    .grid {
+      box-sizing: content-box;
+      display: grid;
+      width: fit-content;
+      outline: 1px solid var(--control);
+      padding: var(--padding, 12px);
+      grid-template: repeat(5, 1fr) / repeat(5, 1fr);
+      background-color: #fff;
+    }
+    .grid i {
+      width: var(--size, 16px);
+      height: var(--size, 16px);
+      background-color: var(--bg, transparent);
+    }
+    .grid i.hidden {
+      background-color: transparent;
+    }
+    .info {
+      margin: 1em 0;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Identicon</h1>
+
+  <section class="content">
+    <label for="$id">ID:</label>
+    <input id="$id" spellcheck="false" autofocus>
+    <label for="$hash">Hash:</label>
+    <select id="$hash">
+      <option value="md5" selected>MD5 (same as GitHub)</option>
+      <option value="SHA-1">SHA-1</option>
+      <option value="SHA-256">SHA-256</option>
+      <option value="SHA-384">SHA-384</option>
+      <option value="SHA-512">SHA-512</option>
+    </select>
+    <label for="$padding">Padding:</label>
+    <input id="$padding" type="range" min="0" max="100" step="0.5" value="12">
+    <label for="$size">Unit:</label>
+    <input id="$size" type="range" min="0" max="100" step="0.5" value="16">
+  </section>
+
+  <section>
+    <output id="$output" class="grid">
+      <i></i><i></i><i></i><i></i><i></i>
+      <i></i><i></i><i></i><i></i><i></i>
+      <i></i><i></i><i></i><i></i><i></i>
+      <i></i><i></i><i></i><i></i><i></i>
+      <i></i><i></i><i></i><i></i><i></i>
+    </output>
+    <div class="info"><samp id="$info">Padding: ?px, Unit: ?px</samp></div>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/md5-es@1.8.2/build/md5-es.min.js"></script>
+  <script>
+    // More to read:
+    // https://github.blog/2013-08-14-identicons
+    // https://github.com/asarandi/identicon#algorithm
+
+    var MD5 = window['md5-es'].default
+
+    function hash(value, method = 'md5') {
+      if (method === 'md5') {
+        return MD5.hash(value)
+      } else {
+        const data = new TextEncoder().encode(value)
+        return crypto.subtle.digest(method, data).then(buffer =>
+          Array.from(new Uint8Array(buffer))
+            .map(b => b.toString(16).padStart(2, '0'))
+            .join(''),
+        )
+      }
+    }
+
+    $id.oninput = $id.onpaste = async function update() {
+      var grid = $output.children
+      var md5 = await hash($id.value, $hash.value)
+      var pattern = md5.slice(0, 15)
+      // map: i -> grid[j]
+      var map1 = [2, 7, 12, 17, 22, 1, 6, 11, 16, 21, 0, 5, 10, 15, 20]
+      var map2 = [2, 7, 12, 17, 22, 3, 8, 13, 18, 23, 4, 9, 14, 19, 24]
+      for (var i = 0; i < 15; ++i) {
+        var k = pattern.charCodeAt(i)
+        k = k < 57 ? k & 1 : 1 - (k & 1)
+        grid[map1[i]].className = k ? 'hidden' : ''
+        grid[map2[i]].className = k ? 'hidden' : ''
+      }
+      var color = md5.slice(-7)
+      var h = Number.parseInt(color.slice(0, 3), 16) * 360 / 4095
+      var s = 65 - Number.parseInt(color.slice(3, 5), 16) * 20 / 255
+      var l = 75 - Number.parseInt(color.slice(5, 7), 16) * 20 / 255
+      $output.style.setProperty('--bg', `hsl(
+        ${h.toFixed(2)},
+        ${s.toFixed(2)}%,
+        ${l.toFixed(2)}%
+      )`)
+      refresh_location()
+      refresh()
+    }
+
+    $hash.oninput = $hash.onchange = function update_hash() {
+      $id.dispatchEvent(new InputEvent('input'))
+    }
+
+    $padding.oninput = $padding.onchange = function update_padding() {
+      $output.style.setProperty('--padding', $padding.value + 'px')
+      refresh()
+    }
+
+    $size.oninput = $size.onchange = function update_size() {
+      $output.style.setProperty('--size', $size.value + 'px')
+      refresh()
+    }
+
+    function refresh_location() {
+      let replacement = ''
+      if ($id.value           ) replacement += '&q='       + $id.value;
+      if ($hash.value != 'md5') replacement += '&hash='    + $hash.value;
+      if ($padding.value != 12) replacement += '&padding=' + $padding.value;
+      if ($size.value    != 16) replacement += '&size='    + $size.value;
+      history.replaceState({ q: $id.value }, "", replacement ? replacement.replace('&', '?') : location.pathname)
+    }
+
+    function refresh_info() {
+      $info.textContent = `Padding: ${$padding.value}px, Unit: ${$size.value}px\n`
+    }
+
+    function refresh() {
+      refresh_location()
+      refresh_info()
+    }
+
+    function render_grid() {
+      const grid = []
+      for (const e of $output.children) {
+        grid.push(!e.classList.contains('hidden'))
+      }
+      return Array.from({ length: 5 }, (_, i) =>
+        grid.slice(i * 5,  i * 5 + 5).map(e => e ? 'o' : ' ').join(' ') + '\n',
+      ).join('')
+    }
+
+    $output.onclick = function print() {
+      console.log(render_grid())
+    }
+
+    void function(){
+      var search = new URLSearchParams(location.search)
+      if (search.has('q')) {
+        $id.value = search.get('q')
+      }
+      $id.dispatchEvent(new InputEvent('input'))
+      if (search.has('hash')) {
+        const hash = search.get('hash').toLowerCase()
+        const i = Array.from($hash.options).findIndex(e => e.value.toLowerCase() === hash)
+        if (i !== -1) {
+          $hash.selectedIndex = i
+          $hash.dispatchEvent(new InputEvent('input'))
+        }
+      }
+      if (search.has('padding')) {
+        $padding.value = +search.get('padding') || 12
+        $padding.dispatchEvent(new InputEvent('input'))
+      }
+      if (search.has('size')) {
+        $size.value = +search.get('size') || 18
+        $size.dispatchEvent(new InputEvent('size'))
+      }
+      refresh_info()
+    }()
+  </script>
+</body>
+</html>
