@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>File Type</title>
+  <style>
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: .5em;
+      line-height: 24px;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: .5em;
+    }
+    input {
+      flex: 1;
+      font-family: monospace;
+      font-size: 1rem;
+    }
+    output {
+      font-size: .8em;
+    }
+    [hidden] {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">File Type</h1>
+
+  <section class="content">
+    <label>
+      Upload a file:
+      <input id="$file" type="file">
+    </label>
+    <label>
+      Or, input the hex dump:
+      <input id="$hex" placeholder="42 4D">
+    </label>
+    <label>
+      File Type Result:
+      <output><samp id="$output">Waiting for input.</samp></output>
+    </label>
+    <label id="$base64_wrapper" hidden>
+      Base64 Result:
+      <output><samp id="$base64">Waiting for input.</samp></output>
+    </label>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/js-base64@3.7.5/base64.min.js"></script>
+  <script type="module">
+    import * as FileType from 'https://esm.sh/file-type'
+
+    function batch(update) {
+      let promise = Promise.resolve()
+      let scheduled = false
+      function flush() {
+        scheduled = false
+        update()
+      }
+      return function schedule() {
+        if (!scheduled) {
+          scheduled = true
+          promise.then(flush)
+        }
+      }
+    }
+
+    const initial_output = $output.textContent
+    function clear() {
+      $output.textContent = initial_output
+      $base64_wrapper.hidden = true
+    }
+
+    function output(result) {
+      if (result) {
+        const { ext, mime } = result
+        $output.textContent = `{ ext: '${ext}', mime: '${mime}' }`
+      } else {
+        clear()
+      }
+    }
+
+    async function update_file() {
+      const file = $file.files[0]
+      if (!file) return clear();
+      $base64_wrapper.hidden = true
+      await file.arrayBuffer().then(FileType.fileTypeFromBuffer).then(output)
+    }
+
+    async function update_hex() {
+      const text = $hex.value.replace(/\s+/g, '')
+      if (!/^[0-9a-f]*$/i.test(text)) return clear();
+
+      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      if (text.length & 1) return clear();
+      const array = new Uint8Array(text.length >> 1)
+      for (let i = 0; i < text.length; i += 2) {
+        array[i >> 1] = Number.parseInt(text.slice(i, i + 2), 16)
+      }
+      await FileType.fileTypeFromBuffer(array.buffer).then(output)
+
+      const decoded = Base64.fromUint8Array(array)
+      $base64.textContent = decoded
+      $base64_wrapper.hidden = !decoded
+    }
+
+    function watch($, update) {
+      $.oninput = $.onpaste = $.onchange = batch(update)
+    }
+
+    watch($file, update_file)
+    watch($hex, update_hex)
+
+    const search = new URLSearchParams(location.search)
+    const q = search.get('q') || search.get('hex')
+    if (q) {
+      $hex.value = q
+      $hex.dispatchEvent(new InputEvent('input'))
+    }
+  </script>
+</body>
+</html>
