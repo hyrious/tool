@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>CSS Selector Specificity Calculator</title>
+  <style>
+    html {
+      text-size-adjust: none;
+    }
+    h1 {
+      text-wrap: balance;
+    }
+    section {
+      position: relative;
+      padding: 0;
+    }
+    textarea {
+      display: block;
+      width: 100%;
+      color: var(--front);
+      border-color: var(--control);
+      background: transparent;
+      padding: .5em;
+      font: 18px/24px monospace;
+      resize: none;
+    }
+    h3 {
+      margin: 0;
+    }
+    sup a {
+      color: inherit;
+      cursor: pointer;
+    }
+    .content {
+      position: relative;
+    }
+    .mask {
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+      padding: 10px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 18px/24px monospace;
+    }
+    .type-a { background: lightpink; }
+    .type-b { background: skyblue; }
+    .type-c { background: springgreen; }
+    .type-d { background: var(--control); }
+    @media (prefers-color-scheme: dark) {
+      .type-a { background: rebeccapurple; }
+      .type-b { background: steelblue; }
+      .type-c { background: forestgreen; }
+    }
+    .article {
+      position: fixed;
+      inset: auto 0 0;
+      padding: 1em;
+      border: 1px solid var(--control);
+      background: var(--back);
+      border-bottom: 0;
+      line-height: 1.5;
+    }
+    .item {
+      padding: 0 .5em;
+      font: 18px/24px monospace;
+      font-variant-numeric: tabular-nums slashed-zero;
+    }
+    table {
+      border-collapse: collapse;
+      border-spacing: 0;
+    }
+    th, td {
+      border: 1px solid var(--control);
+      padding: .25em .5em;
+    }
+    th {
+      text-align: left;
+    }
+    td:not(:first-child) {
+      font: 14px/18px monospace;
+    }
+    .output {
+      padding: 10px 0;
+    }
+    .output div {
+      margin-bottom: 10px;
+    }
+    .example {
+      display: flex;
+      font: 14px/18px monospace;
+      font-variant-numeric: tabular-nums slashed-zero;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">CSS Selector Specificity Calculator
+    <sup><a id="info">[?]</a></sup>
+  </h1>
+
+  <section class="content">
+    <textarea id="input" disabled rows="1" placeholder="e.g. header:where(#top) nav li:nth-child(-n + 3 of .active)"></textarea>
+    <div id="mask" class="mask"></div>
+  </section>
+
+  <section class="example">
+    <span class="type-a">(1,0,0)</span>
+    <span class="type-b">(0,1,0)</span>
+    <span class="type-c">(0,0,1)</span>
+    <span class="type-d">(0,0,0)</span>
+  </section>
+
+  <section id="output" class="output"></section>
+
+  <section id="reading" class="article" style="display: none">
+    <h3>Calculate specificity in your head</h3>
+    <p>Basic form <samp>{ID}-{Class}-{Element}</samp>, where:</p>
+    <table>
+      <thead><tr><th>Name</th><th>Specificity</th><th>Examples</th></tr></thead><tbody>
+        <tr><td>ID</td><td>(1,0,0)</td><td>#foo</td></tr>
+        <tr><td>Class</td><td>(0,1,0)</td><td>.foo, [foo], :root, :focus</td></tr>
+        <tr><td>Element</td><td>(0,0,1)</td><td>h1, ::before</td></tr>
+        <tr><td>Universal</td><td>(0,0,0)</td><td>*</td></tr>
+        <tr><td>Where</td><td>(0,0,0)</td><td>:where(.active)</td></tr>
+        <tr><td>Is, Not, Has</td><td>(max of selectors)</td><td>:is(:focus, .active)</td></tr>
+        <tr><td>Nth child</td><td>(max of selectors) + (0,1,0)</td><td>:nth-child(even of :not(.hidden))</td></tr>
+        <tr><td>Host</td><td>(sum of selectors) + (0,1,0)</td><td>:host(.footer)</td></tr>
+        <tr><td>Slotted</td><td>(sum of selectors) + (0,0,1)</td><td>:slotted(span)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <script type="module">
+    /// References:
+    /// https://polypane.app/css-specificity-calculator/
+    /// https://specificity.keegan.st/
+    import { parse } from 'https://esm.sh/css-tree'
+
+    var input    = document.getElementById('input')
+    var mask     = document.getElementById('mask')
+    var output   = document.getElementById('output')
+
+    document.getElementById('info').onclick = function reading(event) {
+      var reading = document.getElementById('reading').style
+      reading.display = reading.display ? '' : 'none'
+    }
+
+    input.oninput = function oninput(event) {
+      var q = this.value
+      history.replaceState({ q }, '', q ? '#' + q : location.pathname)
+      this.style.height = '0'
+      this.style.height = this.scrollHeight + 2 + 'px'
+      calculate(q)
+    }
+    input.disabled = false
+
+    input.value ||= decodeURIComponent(location.hash.slice(1))
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true }))
+
+    function calculate(q) {
+      mask.textContent = ''
+      output.textContent = '';
+      if (q.trim() == '') return;
+
+      const run = (selector, suffix) => {
+        try {
+          const ast = parse(selector, { context: 'selector', positions: true })
+          const info = specificity(ast, (node) => {
+            if (!node.loc) return;
+            return selector.slice(node.loc.start.offset, node.loc.end.offset)
+          })
+          render(selector, info, suffix)
+        } catch (err) {
+          console.warn(err.stack)
+          output.appendChild(document.createElement('div')).textContent = err + ' when parsing ' + JSON.stringify(selector)
+        }
+      }
+
+      let splitter = /\s*,\s*(?![^()]*\))/g, offset = 0, match, selector
+      while (match = splitter.exec(q)) {
+        run(q.slice(offset, match.index), match[0])
+        offset = match.index + match[0].length
+      }
+      run(q.slice(offset))
+    }
+
+    function render(input, { specificityArray, parts }, suffix) {
+      let el = output.appendChild(document.createElement('div'))
+      el.className = 'item'
+      el.textContent = specificityArray.join() + ' ' + input
+
+      let offset = 0
+      for (let { node, selector, specificity, type } of parts) {
+        let start = node.loc.start.offset
+        let end   = node.loc.end.offset
+        if (offset < start) {
+          let span = mask.appendChild(document.createElement('span'))
+          span.className = 'space'
+          span.textContent = input.slice(offset, start)
+        }
+        let span = mask.appendChild(document.createElement('span'))
+        span.className = 'type-' + type
+        span.textContent = selector
+        offset = end
+      }
+      if (suffix) {
+        let span = mask.appendChild(document.createElement('span'))
+        span.className = 'space'
+        span.textContent = suffix
+      }
+    }
+
+    function specificity(ast, stringify) {
+      let A = 0, B = 0, C = 0, parts = []
+
+      ast.children.forEach(node => {
+        const selector = stringify ? stringify(node) : null
+        const basic = { node, selector }
+
+        if (node.type == 'IdSelector') {
+          A++
+          parts.push({ specificity: [1, 0, 0], ...basic, type: 'a' })
+        }
+
+        else if (node.type == 'ClassSelector' || node.type == 'AttributeSelector') {
+          B++
+          parts.push({ specificity: [0, 1, 0], ...basic, type: 'b' })
+        }
+
+        else if (node.type == 'TypeSelector') {
+          if (!node.name.endsWith('*')) {
+            C++
+            parts.push({ specificity: [0, 0, 1], ...basic, type: 'c' })
+          } else {
+            parts.push({ specificity: [0, 0, 0], ...basic, type: 'd' })
+          }
+        }
+
+        else if (node.type == 'PseudoClassSelector') {
+          let name = node.name.toLowerCase()
+          if (name == 'not' || name == 'has' || name == 'is' ||
+              name == 'matches' || name == '-webkit-any' || name == '-moz-any') {
+            let [a, b, c] = maxSpecificity(node.children.first)
+            A += a; B += b; C += c
+            let type = a > 0 ? 'a' : b > 0 ? 'b' : c > 0 ? 'c' : 'd'
+            parts.push({ specificity: [a, b, c], ...basic, type })
+          }
+          else if (name == 'nth-child' || name == 'nth-last-child') {
+            let arg = node.children.first
+            if (arg.type == 'Nth' && arg.selector) {
+              let [a, b, c] = maxSpecificity(arg.selector)
+              A += a; B += b + 1; C += c
+              let types = [a > 0 && 'a', b > 0 && 'b', c > 0 && 'c'].filter(Boolean)
+              parts.push({ specificity: [a, b + 1, c], ...basic, type: 'b', types })
+            } else {
+              B++
+              parts.push({ specificity: [0, 1, 0], ...basic, type: 'b' })
+            }
+          }
+          else if (name == 'where') {
+            parts.push({ specificity: [0, 0, 0], ...basic, type: 'd' })
+          }
+          else if (name == 'before' || name == 'after' || name == 'first-line' || name == 'first-letter') {
+            C++
+            node.type = 'PseudoElementSelector'
+            parts.push({ specificity: [0, 0, 1], ...basic, type: 'c' })
+          }
+          else if (name == 'host' || name == 'host-context') {
+            B++
+            parts.push({ specificity: [0, 1, 0], ...basic, type: 'b' })
+            let internal = stringify(node.children.first)
+            let ast = parse(internal, { context: 'selector', positions: true })
+            let info = specificity(ast, (node) => {
+              if (!node.loc) return;
+              return internal.slice(node.loc.start.column - 1, node.loc.end.column + 1)
+            })
+            A += info.specificityArray[0]
+            B += info.specificityArray[1]
+            C += info.specificityArray[2]
+            parts = parts.concat(info.parts)
+          }
+          else {
+            B++
+            parts.push({ specificity: [0, 1, 0], ...basic, type: 'b' })
+          }
+        }
+
+        else if (node.type == 'PseudoElementSelector') {
+          C++
+          parts.push({ specificity: [0, 1, 0], ...basic, type: 'c' })
+
+          if (node.name.toLowerCase() == 'slotted') {
+            let internal = stringify(node.children.first)
+            let ast = parse(internal, { context: 'selector', positions: true })
+            let info = specificity(ast, (node) => {
+              if (!node.loc) return;
+              return internal.slice(node.loc.start.column - 1, node.loc.end.column + 1)
+            })
+            A += info.specificityArray[0]
+            B += info.specificityArray[1]
+            C += info.specificityArray[2]
+            parts = parts.concat(info.parts)
+          }
+        }
+      })
+
+      return { specificityArray: [A, B, C], parts }
+    }
+
+    function maxSpecificity(node) {
+      if (node.type == 'Raw') {
+        node = parse(node.value, { context: 'selectorList' })
+      }
+      return node.children.reduce(function update(a, b) {
+        b = specificity(b).specificityArray
+        if (a[0] != b[0]) return a[0] > b[0] ? a : b
+        if (a[1] != b[1]) return a[1] > b[1] ? a : b
+        if (a[2] != b[2]) return a[2] > b[2] ? a : b
+      }, [0, 0, 0])
+    }
+  </script>
+</body>
+</html>
