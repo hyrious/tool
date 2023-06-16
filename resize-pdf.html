@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Resize PDF</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <style>
+    label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px dashed var(--control);
+      height: 150px;
+      position: relative;
+    }
+    [type="file"] {
+      appearance: none;
+      position: absolute;
+      inset: 0;
+      border: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+    .active {
+      border: 2px solid;
+    }
+    .loading {
+      background: var(--control);
+    }
+    p, input {
+      font-variant-numeric: slashed-zero tabular-nums;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Resize PDF</h1>
+
+  <section>
+    <label id="$input">
+      <input type="file">
+      <span>Drop PDF file here</span>
+    </label>
+  </section>
+
+  <section>
+    <p id="$info"></p>
+    <p id="$actions" style="display: none">
+      <span data-t="mode"></span>: <select id="$mode">
+        <option value="fix-width" data-t="fix-width"></option>
+        <option value="fix-height" data-t="fix-height"></option>
+        <option value="max-width" data-t="max-width"></option>
+        <option value="max-height" data-t="max-height"></option>
+        <option value="ratio" data-t="ratio"></option>
+      </select> ( <input id="$arg"> ).
+      <button id="$run" data-t="run" disabled>RUN</button><br>
+      <span id="$hint"></span>
+    </p>
+    <p id="$output"></p>
+    <p id="$preview"></p>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.7.107/build/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.16/dist/zip-full.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script type="module">
+    // https://gist.github.com/imolorhe/f8794d3bb55e1a8065b23bcd0efeebe1
+    import { I18n, detectLang } from 'https://esm.sh/val-i18n'
+    import format from 'https://esm.sh/pretty-bytes'
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@3.7.107/build/pdf.worker.min.js"
+
+    function locales(langs, translates) {
+      const out = Object.create(null)
+      for (let i = 0; i < langs.length; ++i) {
+        const o = out[langs[i]] = Object.create(null)
+        for (const key in translates) {
+          o[key] = translates[key][i]
+        }
+      }
+      return out
+    }
+    function kill_plural(translation, known_keys) {
+      const out = Object.create(null)
+      for (const key of known_keys) out[key] = translation;
+      out.other = translation;
+      return out
+    }
+
+    function $(s, root = document) {
+      return root.querySelector(s)
+    }
+
+    const $title = $('.title')
+    const $screen = $('span', $input)
+
+    const i18n = new I18n(detectLang(["en", "zh-CN"]) || "en", locales(["en", "zh-CN"], {
+      "title": ["Resize PDF", "缩放 PDF"],
+      "idle": ["Drop PDF file here", "上传 PDF"],
+      "loading": ["Waiting…", "请稍候…"],
+      "no-pages": ["no pages", "没有识别到内容"],
+      "pages": [{ 0: 'no pages', 1: '1 page', 'other': '{{:option}} pages' }, kill_plural("共 {{:option}} 页", [0, 1])],
+      "the-first-page-is": ['The size of the first page is', "第一页大小为"],
+      "whats-next": ['What\'s next?', "接下来做什么？"],
+      "mode": ["Mode", "缩放模式"],
+      "fix-width": ["Fixed width", "固定宽度"],
+      "fix-height": ["Fixed height", "固定高度"],
+      "max-width": ["Max width", "最大宽度"],
+      "max-height": ["Max height", "最大高度"],
+      "ratio": ["Ratio", "按比例"],
+      "run": ["RUN", "开搞"],
+      "hint": ["may get", "预计产物"],
+      "remaining": ["{{n}} pages to go", "还剩 {{n}} 页"],
+      "done": ["All done!", "已完成."],
+      "zip-png": ["ZIP them as PNG", "创建 PNG 压缩包 (.zip)"],
+      "new-pdf": ["Generate a new PDF", "创建一个新的 PDF"],
+      "zipping": ["Zipping", "正在压缩"],
+      "adding-page": ["Adding page", "正在添加页面"],
+    }))
+
+    globalThis.i18n = i18n
+    const t = i18n.t.bind(i18n)
+    document.title = $title.textContent = t('title')
+
+    document.querySelectorAll('[data-t]').forEach(el => {
+      el.textContent = t(el.dataset.t)
+    })
+
+    function set_state(state) {
+      $screen.textContent = t(state)
+    }
+
+    set_state('idle')
+
+    // global: pdfjsLib
+    $input.ondragover = function dragover(ev) {
+      preventEvent(ev)
+    }
+    let dragging = 0
+    $input.ondragenter = function enter(ev) {
+      preventEvent(ev)
+      if (!isFilesDragEvent(ev)) return;
+      this.classList.add('active')
+      dragging++
+    }
+    $input.ondragleave = function leave(ev) {
+      preventEvent(ev)
+      if (!isFilesDragEvent(ev)) return;
+      if (--dragging === 0) this.classList.remove('active')
+    }
+    $input.ondrop = function drop(ev) {
+      preventEvent(ev)
+      dragging = 0
+      this.classList.remove('active')
+      loadFile(ev.dataTransfer.files)
+    }
+    $input.querySelector('[type="file"]').oninput = function input(ev) {
+      preventEvent(ev)
+      loadFile(this.files)
+    }
+
+    function preventEvent(ev) {
+      ev.stopPropagation();
+      if (ev.cancelable) {
+        ev.preventDefault();
+      }
+    }
+
+    const indexOf = Array.prototype.indexOf
+    function isFilesDragEvent(ev, dt = ev.dataTransfer) {
+      return dt && dt.types && indexOf.call(dt.types, 'Files') !== -1
+    }
+
+    async function loadFile(files) {
+      if (files && files.length === 1) {
+        const buffer = await files[0].arrayBuffer()
+        await getPages(buffer, files[0].name)
+      }
+    }
+
+    async function getPages(buffer, filename) {
+      try {
+        set_state('loading')
+        $input.classList.add('loading')
+        const doc = pdfjsLib.getDocument(buffer)
+        const pdf = await doc.promise
+        globalThis.pdf = pdf
+
+        if (pdf.numPages === 0) {
+          $info.textContent = `«${filename}» ${t('no-pages')}`
+          return
+        }
+
+        const { length } = await pdf.getDownloadInfo()
+        const { width, height } = await pdf.getPage(1).then(page => page.getViewport({ scale: 1 }))
+
+        $info.textContent = `<${filename}> ${format(length)}, ${t('pages', { ':option': pdf.numPages })}.` +
+                            ` ${t('the-first-page-is')} ${width|0}x${height|0}.` +
+                            ` ${t('whats-next')}`
+
+        $actions.style.display = ''
+        $output.textContent = ''
+        $mode.oninput = function update() {
+          if (this.value === 'ratio') {
+            $arg.placeholder = '1.0'
+          } else if (this.value.endsWith('width')) {
+            $arg.placeholder = (width|0) + ''
+          } else {
+            $arg.placeholder = (height|0) + ''
+          }
+        }
+        $mode.dispatchEvent(new InputEvent('input'))
+
+        $arg.oninput = function update() {
+          let arg = +this.value
+          if (Number.isFinite(arg)) {
+            $run.disabled = false
+            $hint.textContent = get_hint($mode.value, pdf.numPages, width, height, arg)
+          } else {
+            $run.disabled = true
+            $hint.textContent = ''
+          }
+        }
+
+        function get_hint(mode, pages, width, height, arg) {
+          let r = width / height, rT = height / width
+          let out = { width, height }
+
+          if (mode === 'fix-width' || mode === 'max-width' && width >= arg) {
+            out.width = arg | 0
+            out.height = (arg * rT) | 0
+          }
+          if (mode === 'fix-height' || mode === 'max-height' && height >= arg) {
+            out.height = arg | 0
+            out.width = (arg * r) | 0
+          }
+          if (mode === 'ratio') {
+            out.width = (width * arg) | 0
+            out.height = (height * arg) | 0
+          }
+
+          return `${t('hint')}: ${out.width}x${out.height}x${pages}`
+        }
+
+        $run.onclick = function run() {
+          $output.textContent = ''
+
+          do_run($mode.value, +$arg.value)
+        }
+
+        async function do_run(mode, arg) {
+          $run.disabled = true
+          set_state('loading')
+
+          let remaining = pdf.numPages
+          let result = Array(pdf.numPages)
+          const report = () => {
+            $output.textContent = `${t('remaining', { n: remaining })}.`
+          }
+          report()
+          $preview.innerText = ''
+
+          for (let i = 1; i <= pdf.numPages; ++i) {
+            const page = await pdf.getPage(i)
+            const scale = compute_scale(page.getViewport({ scale: 1 }), mode, arg)
+            const viewport = page.getViewport({ scale })
+            const canvas = document.createElement('canvas')
+            canvas.width = viewport.width // may be a float number, but canvas will round it down
+            canvas.height = viewport.height
+            const ctx = canvas.getContext('2d')
+            const rendering = page.render({ canvasContext: ctx, viewport })
+            rendering.promise.then(() => {
+              remaining--; report()
+              $preview.appendChild(document.createTextNode(' '))
+              $preview.appendChild(canvas)
+              if (remaining === 0) {
+                $output.textContent = t('done')
+                set_state('idle')
+                following_up(filename)
+              }
+            })
+          }
+        }
+
+        function compute_scale({ width, height }, mode, arg) {
+          if (mode === 'ratio') return arg;
+          if (mode === 'fix-width') return arg / width;
+          if (mode === 'fix-height') return arg / height;
+          if (mode === 'max-width') return width < arg ? 1 : (arg / width);
+          if (mode === 'max-height') return height < arg ? 1 : (arg / height);
+          throw new Error('invalid mode: ' + mode)
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        $input.classList.remove('loading')
+        set_state('idle')
+      }
+    }
+
+    function following_up(filename) {
+      const images = Array.from($preview.querySelectorAll('canvas'))
+
+      function make_button(text) {
+        let el = document.createElement('button')
+        el.textContent = text
+        return el
+      }
+
+      $output.appendChild(document.createTextNode(' '))
+      $output.appendChild(make_button(t('zip-png'))).onclick = async function make_zip() {
+        const zipWriter = new zip.ZipWriter(new zip.BlobWriter("application/zip"), {
+          bufferedWrite: true,
+          useCompressionStream: false,
+        })
+        const width = (images.length + '').length
+        const naming = n => String(n).padStart(width, '0')
+        for (let i = 0; i < images.length; ++i) {
+          const c = images[i]
+          $hint.textContent = `${t('zipping')} ${i+1}/${images.length}…`
+          const blob = await new Promise(resolve => c.toBlob(resolve))
+          await zipWriter.add('/' + filename + '/' + naming(i + 1) + '.png', new zip.BlobReader(blob))
+        }
+        $hint.textContent = ''
+        const blob = await zipWriter.close()
+        const url = URL.createObjectURL(blob)
+        $hint.textContent = `download.zip ${format(blob.size)}`
+        download('download.zip', url)
+      }
+
+      $output.appendChild(document.createTextNode(' '))
+      $output.appendChild(make_button(t('new-pdf'))).onclick = function make_pdf() {
+        const outWidth = images[0].width, outHeight = images[0].height
+        const orientation = outWidth > outHeight ? 'l' : 'p'
+        const pdf = new jspdf.jsPDF({
+          format: [outWidth, outHeight],
+          orientation: orientation,
+          compress: true,
+        })
+        for (let i = 0; i < images.length; ++i) {
+          const c = images[i]
+          $hint.textContent = `${t('adding-page')} ${i+1}/${images.length}…`
+          pdf.addPage([c.width, c.height], orientation)
+          pdf.addImage(c.toDataURL(), "PNG", 0, 0, c.width, c.height, "", "FAST");
+        }
+        const buffer = pdf.output("arraybuffer")
+        $hint.textContent = `download.pdf ${format(buffer.byteLength)}`
+        const url = URL.createObjectURL(new Blob([buffer]))
+        download('download.pdf', url)
+      }
+    }
+
+    function download(filename, url) {
+      let a = document.createElement('a')
+      a.download = filename
+      a.href = url
+      document.body.appendChild(a)
+      a.click()
+      setTimeout(() => {
+        a.remove()
+        URL.revokeObjectURL(url)
+      }, 1000)
+    }
+  </script>
+</body>
+</html>
