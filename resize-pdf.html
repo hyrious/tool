@@ -184,6 +184,26 @@
       }
     }
 
+    function save_state() {
+      const search = new URLSearchParams()
+      if ($mode.value !== 'fix-width') search.set('mode', $mode.value);
+      if ($arg.value) search.set('arg', $arg.value);
+      const s = search.toString()
+      history.replaceState({ s }, '', s ? '?' + s : location.pathname)
+    }
+
+    function load_state() {
+      const search = new URLSearchParams(location.search)
+      if (search.has('mode')) {
+        $mode.value = search.get('mode');
+        $mode.dispatchEvent(new InputEvent('input'));
+      }
+      if (search.has('arg')) {
+        $arg.value = search.get('arg');
+        $arg.dispatchEvent(new InputEvent('input'));
+      }
+    }
+
     async function getPages(buffer, filename) {
       try {
         set_state('loading')
@@ -207,6 +227,7 @@
         $actions.style.display = ''
         $output.textContent = ''
         $mode.oninput = function update() {
+          save_state()
           if (this.value === 'ratio') {
             $arg.placeholder = '1.0'
           } else if (this.value.endsWith('width')) {
@@ -215,9 +236,9 @@
             $arg.placeholder = (height|0) + ''
           }
         }
-        $mode.dispatchEvent(new InputEvent('input'))
 
         $arg.oninput = function update() {
+          save_state()
           let arg = +this.value
           if (Number.isFinite(arg)) {
             $run.disabled = false
@@ -227,6 +248,9 @@
             $hint.textContent = ''
           }
         }
+
+        load_state()
+        $mode.dispatchEvent(new InputEvent('input'))
 
         function get_hint(mode, pages, width, height, arg) {
           let r = width / height, rT = height / width
