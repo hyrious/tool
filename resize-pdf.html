@@ -31,7 +31,11 @@
       background: var(--control);
     }
     p, input {
+      position: relative;
       font-variant-numeric: slashed-zero tabular-nums;
+    }
+    canvas {
+      max-width: 100%;
     }
   </style>
 </head>
@@ -196,7 +200,7 @@
         const { length } = await pdf.getDownloadInfo()
         const { width, height } = await pdf.getPage(1).then(page => page.getViewport({ scale: 1 }))
 
-        $info.textContent = `<${filename}> ${format(length)}, ${t('pages', { ':option': pdf.numPages })}.` +
+        $info.textContent = `«${filename}» ${format(length)}, ${t('pages', { ':option': pdf.numPages })}.` +
                             ` ${t('the-first-page-is')} ${width|0}x${height|0}.` +
                             ` ${t('whats-next')}`
 
@@ -331,7 +335,7 @@
       }
 
       $output.appendChild(document.createTextNode(' '))
-      $output.appendChild(make_button(t('new-pdf'))).onclick = function make_pdf() {
+      $output.appendChild(make_button(t('new-pdf'))).onclick = async function make_pdf() {
         const outWidth = images[0].width, outHeight = images[0].height
         const orientation = outWidth > outHeight ? 'l' : 'p'
         const pdf = new jspdf.jsPDF({
@@ -342,8 +346,9 @@
         for (let i = 0; i < images.length; ++i) {
           const c = images[i]
           $hint.textContent = `${t('adding-page')} ${i+1}/${images.length}…`
-          pdf.addPage([c.width, c.height], orientation)
+          if (i) pdf.addPage([c.width, c.height], orientation)
           pdf.addImage(c.toDataURL(), "PNG", 0, 0, c.width, c.height, "", "FAST");
+          await new Promise(requestAnimationFrame)
         }
         const buffer = pdf.output("arraybuffer")
         $hint.textContent = `download.pdf ${format(buffer.byteLength)}`
