@@ -126,8 +126,80 @@
         $close.onclick = function close() {
             $preview_div.classList.add('hidden')
         }
+        function isHeic(buffer) {
+            const brand = String.fromCharCode(...new Uint8Array(buffer.slice(8, 12))).replace('\0', ' ').trim()
+            return 'mif1 msf1 heic heix hevc hevx'.split(' ').includes(brand)
+        }
+        async function decodeHeic(buffer) {
+            if (!decodeHeic.promise) {
+                console.log('loading libheif-js...')
+                decodeHeic.promise = new Promise((resolve, reject) => {
+                    const s = document.createElement('script')
+                    s.src = 'https://cdn.jsdelivr.net/npm/libheif-js@1.15.1/libheif/libheif.js'
+                    s.onload = () => resolve(window.libheif)
+                    s.onerror = reject
+                    document.head.appendChild(s)
+                })
+            }
+            const libheif = await decodeHeic.promise
+            const decoder = new libheif.HeifDecoder()
+            const [image] = decoder.decode(buffer)
+            console.log('decoding...', image)
+            
+            const width = image.get_width()
+            const height = image.get_height()
+            console.log('decoding...', { width, height })
+
+            const data = await new Promise((resolve, reject) => {
+                image.display({ data: new Uint8ClampedArray(width * height * 4), width, height }, ret => {
+                    if (ret) {
+                        resolve(ret.data.buffer)
+                    } else {
+                        reject(new Error('HEIF processing error'))
+                    }
+                })
+            })
+            console.log('decoded', data.byteLength)
+
+            return { width, height, data }
+        }
         async function load(file) {
             if (!file) return;
+
+            const buffer = await file.arrayBuffer()
+            if (isHeic(buffer)) {
+                document.title = 'decoding HEIC...'
+                const { width, height, data } = await decodeHeic(buffer)
+                document.title = 'rendering HEIC...'
+
+                make_hint(width, height)
+                $preview_div.classList.remove('hidden')
+
+                const canvas = document.createElement('canvas')
+                canvas.width  = width
+                canvas.height = height
+
+                const ctx = canvas.getContext('2d')
+                ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0)
+
+                canvas.toBlob(async blob => {
+                    document.title = 'Image Portal'
+
+                    if (!blob) throw new Error('canvas.toBlob() failed');
+
+                    const data = [new ClipboardItem({ [blob.type]: blob })]
+                    await navigator.clipboard.write(data)
+
+                    // Fix the preview image, since we do not support GIF
+                    URL.revokeObjectURL($preview.src)
+                    $preview.src = URL.createObjectURL(blob)
+
+                    make_hint(canvas.width, canvas.height)
+                }, 'image/png', 1)
+
+                return
+            }
+
             $preview_div.classList.remove('hidden')
 
             function h(t, body = '') {
