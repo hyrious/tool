@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>DOCX Viewer</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@hyrious/github-markdown-css">
+  <style>
+    article.markdown-body { margin: 0 5% 10px; padding: 1em }
+    article > p.error { margin: 0 0 10px; padding: 1rem; background-color: rgba(255, 0, 0, 0.2) }
+    article > p.warning { margin: 0 0 10px; padding: 1rem; background-color: rgba(255, 255, 0, 0.2) }
+  </style>
+</head>
+<body>
+  <h1 class="title">DOCX Viewer</h1>
+
+  <drop-zone id="$input"></drop-zone>
+
+  <article id="$output" class="markdown-body"></article>
+
+  <script type="module">
+    import mammoth from 'https://esm.sh/mammoth@1.6.0/mammoth.browser'
+
+    customElements.define('drop-zone', class DropZone extends HTMLElement {
+      constructor() {
+        super()
+
+        const shadowRoot = this.attachShadow({mode: 'open'})
+        const section = document.createElement('section')
+        const input = document.createElement('input')
+        input.type = 'file'
+        const label = document.createElement('label')
+
+        const style = document.createElement('style')
+        style.innerText = `
+          section { margin: 0 5% 10px }
+          label { display: flex; height: 150px; border: 2px dashed var(--control); position: relative }
+          label.active { border: 2px solid }
+          label.loading { background: var(--control) }
+          label::after { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                         content: "Drop a docx file here"; pointer-events: none }
+          input { position: absolute; inset: 0; cursor: pointer; opacity: 0 }
+        `
+
+        this.refresh_loading_style = function () {
+          label.classList.toggle('loading', this.loading)
+        }
+
+        shadowRoot.appendChild(style)
+        shadowRoot.appendChild(section).appendChild(label).appendChild(input)
+
+        const oninput = (file) => file && this.dispatchEvent(new CustomEvent('input',
+          { detail: file, bubbles: true, cancelable: true }))
+
+        const stop = (event) => {
+          event.stopPropagation();
+          if (event.cancelable) event.preventDefault();
+        }
+
+        const indexOf = Array.prototype.indexOf
+        const isFilesDragEvent = (event, dt = event.dataTransfer) =>
+          dt && dt.types && indexOf.call(dt.types, 'Files') !== -1
+
+        input.oninput = function (ev) { stop(ev); oninput(this.files[0]) }
+
+        label.dragging = 0
+        label.ondragover = stop
+        label.ondragenter = function (ev) {
+          stop(ev)
+          if (isFilesDragEvent(ev)) {
+            this.classList.add('active')
+            this.dragging++
+          }
+        }
+        label.ondragleave = function (ev) {
+          stop(ev)
+          if (isFilesDragEvent(ev)) {
+            if (--this.dragging == 0) this.classList.remove('active')
+          }
+        }
+        label.ondrop = function (ev) {
+          stop(ev)
+          this.dragging = 0
+          this.classList.remove('active')
+          oninput(ev.dataTransfer.files[0])
+        }
+      }
+      get loading() {
+        return this.hasAttribute('loading')
+      }
+      set loading(bool) {
+        if (bool)
+          this.setAttribute('loading', 'true')
+        else
+          this.removeAttribute('loading')
+      }
+      static get observedAttributes() {
+        return ['loading']
+      }
+      attributeChangedCallback() {
+        this.refresh_loading_style()
+      }
+    })
+
+    $input.oninput = async function ({ detail: file }) {
+      this.loading = true
+      try {
+        const { value, messages } = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() })
+        $output.innerText = ''
+        for (const { type, message } of messages) {
+          const p = document.createElement('p')
+          p.className = type
+          p.textContent = message
+          $output.appendChild(p)
+        }
+        $output.appendChild(document.createRange().createContextualFragment(value))
+      } catch (err) {
+        $output.innerText = err + ''
+        console.error(err)
+      } finally {
+        this.loading = false
+      }
+    }
+  </script>
+</body>
+</html>
