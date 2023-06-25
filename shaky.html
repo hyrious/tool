@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Shaky</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <style>
+    textarea {
+      width: 100%;
+      color: var(--front);
+      border-color: var(--control);
+      background-color: var(--back);
+      padding: .5em;
+      font: 12px/12px monospace;
+      resize: none;
+    }
+    svg {
+      width: 100%;
+      height: 100%;
+    }
+    .content {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+  </style>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Gloria+Hallelujah&display=swap" rel="stylesheet">
+</head>
+<body>
+  <h1 class="title">Shaky</h1>
+
+  <section class="content">
+    <textarea id="$input" rows="10">+----+  +----+
+|V8  |  |    |
+|   *+--+&gt; JS|
++----+  +----+</textarea>
+    <svg id="$svg"></svg>
+    <!-- <canvas id="$canvas"></canvas> -->
+  </section>
+
+  <script type="module">
+    // This is a js port of Shaky.dart (https://github.com/mraleph/moe-js/blob/master/talks/jsconfeu2012/tools/shaky/web/shaky.dart)
+    // Although it alreay has a shaky.dart.js, I added supports for SVG outputs.
+    //
+    // Now it lacks special lines       -+
+    // and disconnected boxes            |
+    // +--------------------+             > like this
+    // | ~~~~~~~~~~~~~~~~~~ | like this  |
+    // +--------------------+           -+
+
+    class ShakyPlot {
+      constructor() {
+        this.random = Math.random
+        this.x0 = this.y0 = 0
+      }
+      moveTo(x0, y0) {
+        this.x0 = x0
+        this.y0 = y0
+      }
+      lineTo(x1, y1) {
+        this.shakyLine(this.x0, this.y0, x1, y1)
+        this.x0 = x1
+        this.y0 = y1
+      }
+      // Draw a shaky line between (x0, y0) and (x1, y1).
+      shakyLine(x0, y0, x1, y1) {
+        // Let v = p0 -> p1
+        var dx = x1 - x0, dy = y1 - y0
+        // Let l be the length of v
+        var l = Math.hypot(dx, dy)
+        // Pick 2 random points that are placed on different sides of the line
+        // that passes through p1 and p2 and not very far from it if l is small
+        // If l is less than 1, sqrt(l) will be bigger than l
+        var K = Math.sqrt(l) / 1.5
+        var k1 = this.random()
+        var k2 = this.random()
+        var l3 = this.random() * K
+        var l4 = this.random() * K
+        var x3 = x0 + dx * k1 + dy/l * l3
+        var y3 = y0 + dy * k1 - dx/l * l3
+        var x4 = x0 + dx * k2 - dy/l * l4
+        var y4 = y0 + dy * k2 + dx/l * l4
+        // Draw a bezier curve through p0-p3-p4->p1
+        this.curve(x0, y0, x3, y3, x4, y4, x1, y1)
+      }
+      // Draw a shaky bulb (used for line endings).
+      bulb(x0, y0) {
+        this.fillArc(x0, y0, 5)
+      }
+      // Draw a shaky arrowhead at the (x1, y1) as an ending
+      // for the line from (x0, y0) to (x1, y1).
+      arrowhead(x0, y0, x1, y1) {
+        var dx = x0 - x1, dy = y0 - y1
+        var alpha = Math.atan(dy / dx)
+        if (dy == 0) {
+          alpha = dx < 0 ? -Math.PI : 0
+        }
+        var alpha3 = alpha + 0.5
+        var alpha4 = alpha - 0.5
+        var l3 = 20
+        var x3 = x1 + l3 * Math.cos(alpha3)
+        var y3 = y1 + l3 * Math.sin(alpha3)
+        this.beginPath()
+        this.moveTo(x3, y3)
+        this.lineTo(x1, y1)
+        this.stroke()
+        var l4 = 20
+        var x4 = x1 + l4 * Math.cos(alpha4)
+        var y4 = y1 + l4 * Math.sin(alpha4)
+        this.beginPath()
+        this.moveTo(x4, y4)
+        this.lineTo(x1, y1)
+        this.stroke()
+      }
+      beginPath() {
+        throw new Error('Not implemented')
+      }
+      curve(x0, y0, cx0, cy0, cx1, cy1, x1, y1) {
+        throw new Error('Not implemented')
+      }
+      fillArc(x0, y0, radius) {
+        throw new Error('Not implemented')
+      }
+      stroke() {
+        throw new Error('Not implemented')
+      }
+      set strokeStyle(val) {
+        throw new Error('Not implemented')
+      }
+      set fillStyle(val) {
+        throw new Error('Not implemented')
+      }
+      fillText(text, x0, y0) {
+        throw new Error('Not implemented')
+      }
+    }
+
+    class ShakyJSON extends ShakyPlot {
+      constructor() {
+        super()
+        this.curves = []
+        this.dots   = []
+        this.texts  = []
+        this._strokeStyle = ''
+        this._fillStyle = ''
+      }
+      beginPath() {}
+      curve(x0, y0, cx0, cy0, cx1, cy1, x1, y1) {
+        this.curves.push([x0, y0, cx0, cy0, cx1, cy1, x1, y1, this._strokeStyle])
+      }
+      fillArc(x0, y0, radius) {
+        this.dots.push([x0, y0, radius, this._fillStyle])
+      }
+      stroke() {}
+      set strokeStyle(val) {
+        this._strokeStyle = val
+      }
+      set fillStyle(val) {
+        this._fillStyle = val
+      }
+      fillText(text, x0, y0) {
+        this.texts.push([text, x0, y0, this._fillStyle])
+      }
+      json() {
+        return { curves: this.curves, dots: this.dots, texts: this.texts }
+      }
+    }
+
+    class ShakyCanvas extends ShakyPlot {
+      constructor(canvas) {
+        super()
+        this.canvas = canvas
+        this.ctx = canvas.getContext('2d')
+      }
+      beginPath() {
+        this.ctx.beginPath()
+      }
+      curve(x0, y0, cx0, cy0, cx1, cy1, x1, y1) {
+        this.ctx.moveTo(x0, y0)
+        this.ctx.bezierCurveTo(cx0, cy0, cx1, cy1, x1, y1)
+      }
+      fuzziness() {
+        return this.random() * 2 - 1
+      }
+      fillArc(x0, y0, radius) {
+        for (var i = 0; i < 3; ++i) {
+          this.ctx.beginPath()
+          this.ctx.arc(x0 + this.fuzziness(), y0 + this.fuzziness(), radius, 0, Math.PI * 2, true)
+          this.ctx.closePath()
+          this.ctx.fill()
+        }
+      }
+      stroke() {
+        this.ctx.stroke()
+      }
+      set strokeStyle(val) {
+        this.ctx.strokeStyle = val
+      }
+      set fillStyle(val) {
+        this.ctx.fillStyle = val
+      }
+      fillText(text, x0, y0) {
+        this.ctx.fillText(text, x0, y0)
+      }
+    }
+
+    class ShakySVG extends ShakyPlot {
+      constructor(svg) {
+        super()
+        this.svg = svg
+        this._d = ''
+      }
+      beginPath() {
+        this._d = ''
+      }
+      format(s, ...args) {
+        return s.replace(/{(\d+)}/g, function replacer(_, $1) {
+          return args[$1].toFixed(2)
+        })
+      }
+      curve(x0, y0, cx0, cy0, cx1, cy1, x1, y1) {
+        this._d += this.format(`M{0},{1}C{2},{3} {4},{5} {6},{7}`, x0, y0, cx0, cy0, cx1, cy1, x1, y1)
+      }
+      fuzziness() {
+        return this.random() * 2 - 1
+      }
+      fillArc(x0, y0, radius) {
+        for (var i = 0; i < 3; ++i) {
+          var c = this.svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'circle'))
+          c.setAttribute('cx', x0 + this.fuzziness())
+          c.setAttribute('cy', y0 + this.fuzziness())
+          c.setAttribute('r', radius)
+          c.style.fill = this._fillStyle
+        }
+      }
+      stroke() {
+        var path = this.svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'path'))
+        path.setAttribute('d', this._d)
+        path.style.stroke = this._strokeStyle
+      }
+      set strokeStyle(val) {
+        this._strokeStyle = val
+      }
+      set fillStyle(val) {
+        this._fillStyle = val
+      }
+      fillText(text, x0, y0) {
+        var t = this.svg.appendChild(document.createElementNS('http://www.w3.org/2000/svg', 'text'))
+        t.setAttribute('x', x0)
+        t.setAttribute('y', y0)
+        t.textContent = text
+        t.style.fill = this._fillStyle
+      }
+    }
+
+    const CELL_SIZE = 15
+    const X = x => x * CELL_SIZE + CELL_SIZE / 2
+    const Y = y => y * CELL_SIZE + CELL_SIZE / 2
+
+    class Point {
+      constructor(x, y) {
+        this.x = x
+        this.y = y
+      }
+    }
+
+    class Line {
+      constructor(x0, y0, start, x1, y1, end, color) {
+        this.x0 = x0
+        this.y0 = y0
+        this.start = start
+        this.x1 = x1
+        this.y1 = y1
+        this.end = end
+        this.color = color
+      }
+      draw(shaky) {
+        shaky.strokeStyle = this.color
+        shaky.fillStyle = this.color
+        shaky.beginPath()
+        shaky.moveTo(X(this.x0), Y(this.y0))
+        shaky.lineTo(X(this.x1), Y(this.y1))
+        shaky.stroke()
+        this._ending(shaky, this.start, X(this.x1), Y(this.y1), X(this.x0), Y(this.y0))
+        this._ending(shaky, this.end, X(this.x0), Y(this.y0), X(this.x1), Y(this.y1))
+      }
+      _ending(shaky, type, x0, y0, x1, y1) {
+        switch (type) {
+          case "circle": shaky.bulb(x1, y1); break;
+          case "arrow": shaky.arrowhead(x0, y0, x1, y1); break;
+        }
+      }
+    }
+
+    class Text {
+      constructor(x0, y0, text, color) {
+        this.x0 = x0
+        this.y0 = y0
+        this.text = text
+        this.color = color
+      }
+      draw(shaky) {
+        shaky.fillStyle = this.color
+        shaky.fillText(this.text, X(this.x0), Y(this.y0))
+      }
+    }
+
+    const Color1 = 'white'
+    const Color2 = '#666'
+
+    // Parses given ASCII art string into a list of figures (Line and Text)
+    function parseASCIIArt(string) {
+      var lines  = string.split('\n')
+      var width  = lines.reduce((w, line) => Math.max(w, line.length), 0)
+      var height = lines.length
+      var data   = Array(height) // Matrix containing ASCII art.
+
+      // Get a character from the array or null if we are out of bounds
+      function at(y, x) {
+        return 0 <= y && y < height && 0 <= x && x < width ? data[y][x] : null
+      }
+
+      // Convert strings into a mutable matrix of characters
+      for (var y = 0; y < height; ++y) {
+        var line = lines[y]
+        data[y] = Array(width)
+        for (var x = 0; x < line.length; ++x) {
+          data[y][x] = line[x]
+        }
+        for (var x = line.length; x < width; ++x) {
+          data[y][x] = ' '
+        }
+      }
+
+      // Returns true iff the character can be part of the line
+      function isPartOfLine(x, y) {
+        var c = at(y, x)
+        return c == '|' || c == '-' || c == '+' || c == '~' || c == '!'
+      }
+
+      // If character modifies the color, returns it
+      function toColor(x, y) {
+        switch (at(y, x)) {
+          case '~': case '!': return Color2
+        }
+      }
+
+      // Returns true iff the character is line ending decoration
+      function isLineEnding(x, y) {
+        var c = at(y, x)
+        return c == '*' || c == '<' || c == '>' || c == '^' || c == 'v'
+      }
+
+      // Find a '|' or '-', returns the point
+      function findLineChar() {
+        for (var y = 0; y < height; ++y)
+          for (var x = 0; x < width; ++x)
+            if (data[y][x] == '|' || data[y][x] == '-')
+              return new Point(x, y)
+      }
+
+      // Converts line's character to the direction of line's growth
+      var dir = { '-': new Point(1, 0), '|': new Point(0, 1) }
+
+      // Erases character that belongs to the extracted line
+      function eraseChar(x, y, dx, dy) {
+        switch (at(y, x)) {
+          case '|':
+          case '-':
+          case '*':
+          case '>':
+          case '<':
+          case '^':
+          case 'v':
+          case '~':
+          case '!':
+            data[y][x] = ' '
+            return
+          case '+':
+            dx = 1 - dx
+            dy = 1 - dy
+
+            data[y][x] = ' '
+            switch (at(y - dy, x - dx)) {
+              case '|':
+              case '!':
+              case '+':
+                data[y][x] = '|'
+                return
+              case '-':
+              case '~':
+              case '+':
+                data[y][x] = '-'
+                return
+            }
+
+            switch (at(y + dy, x + dx)) {
+              case '|':
+              case '!':
+              case '+':
+                data[y][x] = '|'
+                return
+              case '-':
+              case '~':
+              case '+':
+                data[y][x] = '-'
+                return
+            }
+
+            return
+        }
+      }
+
+      // Erase the given extracted line
+      function erase(line) {
+        var dx = line.x0 != line.x1 ? 1 : 0
+        var dy = line.y0 != line.y1 ? 1 : 0
+        if (dx != 0 || dy != 0) {
+          var x  = line.x0 + dx, y  = line.y0 + dy
+          var x_ = line.x1 - dx, y_ = line.y1 - dy
+          while (x <= x_ && y <= y_) {
+            eraseChar(x, y, dx, dy)
+            x += dx
+            y += dy
+          }
+          eraseChar(line.x0, line.y0, dx, dy)
+          eraseChar(line.x1, line.y1, dx, dy)
+        } else {
+          eraseChar(line.x0, line.y0, dx, dy)
+        }
+      }
+
+      var figures = [] // List of extracted figures
+
+      // Extract a single line and erase it from the ascii art matrix.
+      function extractLine() {
+        var ch = findLineChar()
+        if (ch == null) return false;
+
+        var d = dir[data[ch.y][ch.x]]
+
+        // Find line's start by advancing the opposite direction.
+        var x0 = ch.x
+        var y0 = ch.y
+        var color = null
+        while (isPartOfLine(x0 - d.x, y0 - d.y)) {
+          x0 -= d.x
+          y0 -= d.y
+          if (color == null) color = toColor(x0, y0)
+        }
+
+        var start = null
+        if (isLineEnding(x0 - d.x, y0 - d.y)) {
+          // Line has a decorated start.
+          x0 -= d.x
+          y0 -= d.y
+          start = (data[y0][x0] == '*') ? 'circle' : 'arrow'
+        }
+
+        // Find line's end by advancing forward in the given direction.
+        var x1 = ch.x
+        var y1 = ch.y
+        while (isPartOfLine(x1 + d.x, y1 + d.y)) {
+          x1 += d.x
+          y1 += d.y
+          if (color == null) color = toColor(x1, y1)
+        }
+
+        var end = null
+        if (isLineEnding(x1 + d.x, y1 + d.y)) {
+          // Line has a decorated end.
+          x1 += d.x
+          y1 += d.y
+          end = (data[y1][x1] == '*') ? 'circle' : 'arrow'
+        }
+
+        var line = new Line(x0, y0, start, x1, y1, end, color == null ? Color1 : color)
+        figures.push(line)
+        erase(line)
+        // console.log(data.map(e => e.join('')).join('\n'))
+
+        if (start == 'arrow') {
+          line.x0 -= d.x
+          line.y0 -= d.y
+        }
+
+        if (end == 'arrow') {
+          line.x1 += d.x
+          line.y1 += d.y
+        }
+
+        return true
+      }
+
+      // Extract all non-space characters that were left after line extraction.
+      function extractText() {
+        for (var y = 0; y < height; ++y)
+          for (var x = 0; x < width; ++x)
+            if (data[y][x] != ' ') {
+              // Find the end of the text annotation by searching for a space.
+              var start = x, end = x
+              while ((end < width) && (data[y][end] != ' ')) end++;
+
+              var text = data[y].slice(start, end).join('')
+
+              // Check if it can be concatenated with a previously found text annotation.
+              var prev = figures[figures.length - 1]
+              if ((prev instanceof Text) && (prev.x0 + prev.text.length + 1) == start) {
+                // If they touch concatentate them
+                prev.text = `${prev.text} ${text}`
+              } else {
+                // Look for a grey color modifiers.
+                var color = Color1
+                if (text[0] == '\\' && text[text.length - 1] == '\\') {
+                  text = text.slice(1)
+                  color = Color2
+                }
+                figures.push(new Text(x, y, text, color))
+              }
+              x = end
+            }
+      }
+
+      while (extractLine())
+        ; // Extract all lines.
+      extractText(); // Extract all text.
+
+      return figures
+    }
+
+    // var figures = parseASCIIArt($input.value)
+    // var width = 0, height = 0
+    // for (var figure of figures) {
+    //   if (figure instanceof Line) {
+    //     width = Math.max(width, X(figure.x1 + 1))
+    //     height = Math.max(height, Y(figure.y1 + 1))
+    //   }
+    // }
+
+    // $canvas.width = Math.ceil(width)
+    // $canvas.height = Math.ceil(height)
+
+    // var shaky = new ShakyCanvas($canvas)
+    // shaky.ctx.lineWidth = 3
+    // shaky.ctx.font = '20pt "Gloria Hallelujah"'
+    // shaky.ctx.textBaseline = 'middle'
+
+    $svg.style.strokeWidth = 3
+    $svg.style.font = '20pt "Gloria Hallelujah"'
+    $svg.style.dominantBaseline = 'middle'
+
+    function update() {
+      var hash = $input.value ? '#' + btoa($input.value).replace(/=+$/, '') : ''
+      if (location.hash != hash)
+        history.replaceState({}, '', hash || location.pathname)
+
+      $svg.textContent = ''
+      var shaky = new ShakySVG($svg)
+      var figures = parseASCIIArt($input.value)
+      for (var figure of figures)
+        figure.draw(shaky)
+    }
+
+    $input.oninput = update
+
+    var data = atob(location.hash.slice(1))
+    if (data) {
+      $input.value = data
+    }
+
+    $input.dispatchEvent(new InputEvent('input'))
+  </script>
+</body>
+</html>
