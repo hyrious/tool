@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>I Can't Use</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.8.0/styles/default.min.css" media="(prefers-color-scheme: light)">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.8.0/styles/dark.min.css" media="(prefers-color-scheme: dark)">
+  <style>
+    body { font: 16px/24px monospace }
+    .message {
+      margin: 0 calc(5% - 10px); padding: 10px; font: 13px/15px sans-serif;
+      background: var(--control);
+    }
+    .input { display: flex; gap: .5ch }
+    .input input { flex: 1 }
+    .output { padding-bottom: 250px }
+    [data-feat] {
+      outline: 1px solid var(--control);
+      outline-offset: 3px;
+      border-radius: 2px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+    @font-face {
+      font-family: 'CustomFont';
+      src: local("Inter"), local("Inter V"), local("Iosevka"), local("Cascadia Code"), local("JetBrains Mono");
+      unicode-range: U+003C, U+003D, U+003E;
+    }
+    [data-feat] small {
+      user-select: none;
+      position: absolute;
+      text-align: right;
+      right: 0;
+      font: 12px/14px 'CustomFont', sans-serif;
+      display: none;
+    }
+    [data-feat]:hover {
+      outline: 2px solid;
+    }
+    [data-feat]:hover small {
+      display: inline-block;
+    }
+    pre {
+      margin: 0;
+    }
+    pre code.hljs {
+      padding: .5rem 1rem;
+      font: 14px/18px monospace;
+      background: transparent;
+    }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.8.0/highlight.min.js"></script>
+</head><!--
+  This is yet another [Can I Use](https://caniuse.com/).
+  Data comes from esbuild's compat table.
+
+  Instead of searching language AND runtime features,
+  here it ONLY handles language features.
+  And not by feature name, but by runtime.
+
+  So basically this tool answers to me:
+  "If I am writing vanilla JavaScript for Node.js 14 / Chrome 59,
+  what features I can not use? (so that I will not use)."
+--><body>
+  <h2 class="title">I Can't Use</h2>
+
+  <p class="message">Detect what features are there in your code at
+    <a href="https://hyrious.me/esbuild-repl" target="_blank">esbuild.repl</a>.
+  </p>
+
+  <section class="input">
+    <label for="$picker">Target(s):</label>
+    <input id="$picker" placeholder="node14,chrome59">
+  </section>
+
+  <section class="output"></section>
+
+  <script type="module">
+    async function fetch_with_fallbacks(...urls) {
+      for (const url of urls) {
+        const r = await fetch(url)
+        if (!r.ok) {
+          console.warn(await r.text())
+        }
+        return r
+      }
+      throw new Error('failed to fetch ' + urls[0])
+    }
+
+    var code = await fetch_with_fallbacks(
+      'https://raw.githubusercontent.com/evanw/esbuild/main/internal/compat/js_table.go',
+      'https://raw.gitmirror.com/evanw/esbuild/main/internal/compat/js_table.go',
+    ).then(r => r.text())
+    var i = code.indexOf('var jsTable =')
+    var j = code.indexOf('\n}', i)
+    code = code.slice(i, j)
+
+    var data = Object.create(null), cur = null
+    for (const line of code.split('\n')) {
+      if (line.startsWith('\t\t')) {
+        var k1 = line.indexOf(':')
+        var k2 = line.indexOf('{')
+        var k3 = line.lastIndexOf('}')
+        var name = line.slice(2, k1)
+        var range = line.slice(k2 + 1, k3)
+        range = range.replace(/v\{([\s\d,]+)\}/g, '[$1]')
+        data[cur][name.toLowerCase()] = new Function('return [' + range + ']')()
+      } else if (line.startsWith('\t')) {
+        var k = line.lastIndexOf(':')
+        var name = line.slice(1, k)
+        if (/^\w+$/.test(name)) {
+          data[cur = name] = {}
+        }
+      }
+    }
+
+    // { Feat: {chrome: [{start: [1, 0, 0], end: [2, 0, 0]}]} }
+    console.log(window.data = data)
+
+    $picker.oninput = function update() {
+      history.replaceState({}, "", this.value ? '#' + this.value : location.pathname)
+
+      if (this.value.length === 0) {
+        refresh(data)
+        return
+      }
+      var raw = this.value.split(/,+\s*/)
+      var filter = []
+      for (var a of raw) {
+        var m = a.match(/^([a-z]+)([\d\.]+)$/i)
+        if (!m) return;
+
+        var engine = m[1].toLowerCase(), version = m[2].split('.').map(e => +e)
+        filter.push({ engine, version })
+      }
+
+      var filtered = Object.create(null)
+      for (var feat in data) {
+        // find feats that are not supported in filter range
+        // which means range(data[feat]) should exclude any one of filter
+        if (filter.some(({ engine, version }) => !include(data[feat][engine], version))) {
+          filtered[feat] = data[feat]
+        }
+      }
+
+      refresh(filtered)
+    }
+
+    function refresh(feats) {
+      var out = ''
+      for (var feat in feats) {
+        out += `<details data-feat="${feat}">
+          <summary>${feat} <small>${rangestr(feats[feat])}</small></summary>
+          <article>${example(feat)}</article>
+        </details>`
+      }
+      document.querySelector('.output').innerHTML = out
+    }
+
+    function rangestr(ranges) {
+      var all = []
+      for (var target in ranges) {
+        var rr = ranges[target]
+        var str = []
+        for (var r of rr) {
+          var a = []
+          if (r.start && desc(r.start)) a.push('>=' + desc(r.start));
+          if (r.end   && desc(r.end)  ) a.push( '<' + desc(r.end));
+          if (a.length > 0)
+            str.push(a.join(' '))
+        }
+        if (str.length > 0)
+          all.push(target + str.join(' || '))
+      }
+      return all.join('\n')
+    }
+
+    function desc(a) {
+      var end = 2
+      while (a[end] == 0) end--;
+      return a.slice(0, end + 1).join('.')
+    }
+
+    function include(ranges, version) {
+      if (!ranges) return false;
+      for (var range of ranges) {
+        if (compare(range.start, version) <= 0 && (!range.end || compare(range.end, version) > 0)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    function compare(a, b) {
+      var diff = a[0]
+      if (b.length > 0) {
+        diff -= b[0]
+      }
+      if (diff == 0) {
+        diff = a[1]
+        if (b.length > 1) {
+          diff -= b[1]
+        }
+      }
+      if (diff == 0) {
+        diff = a[2]
+        if (b.length > 2) {
+          diff -= b[2]
+        }
+      }
+      return diff
+    }
+
+    var example_cache = Object.create(null)
+    var examples = {
+      ArbitraryModuleNamespaceNames: `const foo = 42;
+export { foo as " 😆 " }
+import { " 😆 " as foo } from "mod";`,
+      ArraySpread: `[...foo]`,
+      Arrow: `() => void 0`,
+      ObjectRestSpreadchrome: `{...foo}`,
+      AsyncAwait: `async function foo() { await bar() }`,
+      AsyncGenerator: `async function *foo() {
+  yield await Promise.resolve('a');
+}`,
+      Bigint: `1000n - 7n`,
+      Class: `var Foo = class Foo {}`,
+      ClassField: `class { foo; bar = 1 }`,
+      ClassPrivateAccessor: `class Foo { accessor #bar }`,
+      ClassPrivateBrandCheck: `class Foo {
+  #bar
+  buzz() { return #bar in this }
+}`,
+      ClassPrivateField: `class Foo { #bar }`,
+      ClassPrivateMethod: `class Foo { #bar() {} }`,
+      ClassPrivateStaticAccessor: `class Foo { static accessor #bar }`,
+      ClassPrivateStaticField: `class Foo { static #bar }`,
+      ClassPrivateStaticMethod: `class Foo { static #bar() {} }`,
+      ClassStaticBlocks: `class Foo { static {} }`,
+      ClassStaticField: `class Foo { static bar = 1 }`,
+      ConstAndLet: `const foo = 1`,
+      Decorators: `@sealed
+class Foo {
+  @cached({ size: 20 })
+  bar() {}
+}`,
+      DefaultArgument: `function foo(bar = 1) {}`,
+      Destructuring: `var [foo, bar] = buzz`,
+      DynamicImport: `import('./lazy-component')`,
+      ExponentOperator: `var INT_MAX = 2 ** 31`,
+      ExportStarAs: `export * as foo from './foo'`,
+      ForAwait: `for await (var chunk of response) {}`,
+      ForOf: `for (var item of iterable) {}`,
+      FunctionOrClassPropertyAccess: `x(function(){}.b)
+x(class{}.b)`,
+      Generator: `function* foo() { yield 1; yield 2 }`,
+      Hashbang: `#!/usr/bin/env node`,
+      ImportAssertions: `import pkg from './package.json' assert { type: 'json' }`,
+      ImportMeta: `import.meta.url`,
+      InlineScript: `x = '<\/script>'`,
+      LogicalAssignment: `x ||= 1`,
+      NestedRestBinding: `[a, b, ...{ pop, push }] = array`,
+      NewTarget: `function Foo() { if (new.target) console.log('invoked by new Foo()') }`,
+      NodeColonPrefixImport: `import fs from 'node:fs'`,
+      NodeColonPrefixRequire: `var fs = require('node:fs')`,
+      NullishCoalescing: `a ?? b`,
+      ObjectAccessors: `a = { get foo() { return 1 } }`,
+      ObjectExtensions: `a = { foo() { return 1 }, bar }`,
+      ObjectRestSpread: `a = { ...b }`,
+      OptionalCatchBinding: `try { foo() } catch {}`,
+      OptionalChain: `a?.b`,
+      RegexpDotAllFlag: `/r.e/s`,
+      RegexpLookbehindAssertions: `/(?<!foo)bar/, /(?<=foo)bar/`,
+      RegexpMatchIndices: `/re/d`,
+      RegexpNamedCaptureGroups: `/(?<foo>bar)/`,
+      RegexpSetNotation: `/^\\p{RGI_Emoji}$/v`,
+      RegexpStickyAndUnicodeFlags: `/\\u{61}/yu`,
+      RegexpUnicodePropertyEscapes: `/\\p{Emoji_Presentation}/u`,
+      RestArgument: `function foo(...bar) {}`,
+      TemplateLiteral: '`3 + 5 = ${3 + 5}`',
+      TopLevelAwait: `await foo()`,
+      TypeofExoticObjectIsObject: `typeof x // may return non-standard value before (<) es2020`,
+      UnicodeEscapes: `var \\u{102C0} = 2;`,
+      Using: `using res = foo()`
+    }
+    function example(feat) {
+      return example_cache[feat] ||= make_example(feat)
+    }
+
+    function make_example(feat) {
+      var html = hljs.highlight(examples[feat] || '', { language: 'js', ignoreIllegals: true }).value
+      return '<pre><code class="hljs">' + html + '</code></pre>'
+    }
+
+    if (location.hash.length > 1) {
+      $picker.value = decodeURIComponent(location.hash.slice(1))
+    }
+    $picker.dispatchEvent(new InputEvent('input'))
+  </script>
+</body>
+</html>
