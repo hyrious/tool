@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>TSDOC</title>
+  <style>
+    html, body { height: 100%; font: 14px/18px monospace; }
+    body { margin: 0; padding: .5em; display: flex; gap: .5em }
+    * { box-sizing: border-box; }
+    textarea, article { flex: 1; resize: none; padding: .5em; }
+  </style>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@hyrious/github-markdown-css@0.2.0/github-markdown.css">
+</head>
+<body>
+
+  <textarea id="$input" placeholder="export type A = number">// loading...</textarea>
+  <article id="$output" class="markdown-body"></article>
+
+  <script src="https://cdn.jsdelivr.net/npm/mold-template@2.0.2/mold.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/markdown-it-deflist@2.1.0/dist/markdown-it-deflist.min.js"></script>
+  <script>
+    // The document generator is npm 'getdocs-ts' and 'builddocs' written by
+    // [marijnh](https://github.com/marijnh "Marijn Haverbeke").
+    // Reference: https://github.com/codemirror/dev/blob/main/bin/build-readme.js
+    (async () => {
+      $input.readOnly = true
+
+      var {tags, versions} = await fetch('https://data.jsdelivr.com/v1/package/npm/typescript').then(r => r.json())
+      var src = `https://cdn.jsdelivr.net/npm/typescript@${tags.latest}/lib/typescript.js`
+      var to_cached = 'lib.d.ts lib.es5.d.ts lib.dom.d.ts lib.webworker.importscripts.d.ts lib.scripthost.d.ts lib.decorators.d.ts lib.decorators.legacy.d.ts'
+        .split(' ').map(e => `https://cdn.jsdelivr.net/npm/typescript@${tags.latest}/lib/${e}`)
+
+      var cache = {}
+      for (let url of to_cached) {
+        cache[url] = fetch(url).then(r => r.text())
+      }
+      for (let url in cache) {
+        cache[url] = await cache[url]
+      }
+      console.debug('cached', Object.keys(cache).map(e => '\n' + e).join(''))
+
+      console.debug('loading', src)
+      var script = document.createElement('script')
+      await new Promise((resolve, reject) => {
+        script.src = src
+        script.onload = () => resolve()
+        script.onerror = reject
+        document.head.appendChild(script)
+      })
+      console.debug('loaded ts =', ts)
+
+      var path_src = fetch('https://cdn.jsdelivr.net/npm/path-browserify@1.0.1/index.js').then(r => r.text())
+      var getdocs_src = fetch(`https://cdn.jsdelivr.net/npm/getdocs-ts@0.1.6/src/index.js`).then(r => r.text())
+      var builddocs_src = fetch(`https://cdn.jsdelivr.net/npm/builddocs@1.0.7/src/builddocs.js`).then(r => r.text())
+      var builddocs_builtins = fetch('https://cdn.jsdelivr.net/npm/builddocs@1.0.7/src/builtins.js').then(r => r.text())
+      var builddocs_browser = fetch('https://cdn.jsdelivr.net/npm/builddocs@1.0.7/src/browser.js').then(r => r.text())
+
+      path_src = await path_src
+      var path = {}
+      new Function('module', 'process', path_src)(path, { cwd() { return '/' } })
+      path = path.exports
+
+      $input.value = localStorage.getItem('tsdoc-input')
+      $input.readOnly = false
+
+      ts.setSysLog(console.debug)
+
+      // simulate a single file index.ts
+      // cache some official lib.d.ts to make it work
+      var sys = {
+        fileExists(p) {
+          if (p in cache || p == 'index.ts') return true;
+          return false
+        },
+        getCurrentDirectory() { return '/' },
+        getExecutingFilePath() { return src },
+        directoryExists(p) { return false },
+        readFile(p) {
+          if (p in cache) return cache[p];
+          if (p == 'index.ts') return $input.value;
+        },
+        getEnvironmentVariable(name) {
+          return '';
+        },
+      }
+      ts.setSys(sys)
+
+      getdocs_src = await getdocs_src
+      var i = getdocs_src.indexOf('ItemsWithParams =')
+      i = getdocs_src.lastIndexOf('\n', i) + 1
+      var getdocs = {}
+      new Function('exports', 'typescript_1', 'path_1', getdocs_src.slice(i))(getdocs, ts, path)
+      console.debug('loaded getdocs-ts =', getdocs)
+      window.getdocs = getdocs
+
+      builddocs_builtins = await builddocs_builtins
+      var builtins = {}
+      new Function('module', builddocs_builtins)(builtins)
+      builtins = builtins.exports
+
+      builddocs_browser = await builddocs_browser
+      var browserImports = {}
+      new Function('module', builddocs_browser)(browserImports)
+      browserImports = browserImports.exports
+
+      builddocs_src = await builddocs_src
+      var i = builddocs_src.indexOf('exports.build =')
+      var builddocs = {}
+      var template_keys = 'class define enum fntype item reexport type typeParens typealias typeparams'.split(' ')
+      var templates = {}
+      for (const [k, v] of template_keys.map(e => {
+        return [e, fetch(`https://cdn.jsdelivr.net/npm/builddocs@1.0.7/templates/${e}.html`).then(r => r.text())]
+      })) {
+        templates[`/../templates/${k}.html`] = await v
+      }
+
+      new Function('exports', 'builtins', 'fs', '__dirname', 'require', builddocs_src.slice(i))(builddocs, builtins, {
+        readdirSync(dir) {
+          if (dir === '/../templates') {
+            return template_keys.map(e => e + '.html')
+          } else return []
+        },
+        readFileSync(file) {
+          return templates[file]
+        }
+      }, '', function require(name) {
+        if (name == 'markdown-it') return markdownit;
+        if (name == 'markdown-it-deflist') return markdownitDeflist;
+        console.debug('not require', name)
+        return null
+      })
+      console.debug('loaded builddocs =', builddocs)
+      window.builddocs = builddocs
+
+      function run() {
+        var data = getdocs.gather({ filename: 'index.ts' })
+
+        var html = builddocs.build({
+          name: 'example',
+          anchorPrefix: '',
+          allowUnresolvedTypes: false,
+          imports: [browserImports],
+        }, data)
+
+        $output.innerHTML = html
+      }
+
+      function run_() {
+        $output.textContent = ''
+        try {
+          run()
+        } catch (err) {
+          $output.textContent = err + ''
+          console.error(err)
+        }
+      }
+
+      var timer = 0
+      $input.oninput = function update() {
+        localStorage.setItem('tsdoc-input', $input.value)
+        clearTimeout(timer)
+        timer = setTimeout(run_, 500)
+      }
+
+      if ($input.value) $input.dispatchEvent(new InputEvent('input'));
+    })();
+  </script>
+</body>
+</html>
