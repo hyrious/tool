@@ -21,6 +21,9 @@ input {
   border-bottom: 0.1em solid var(--front);
   outline: none;
 }
+input:disabled {
+  border-color: var(--control);
+}
 
 section {
   margin: 0 5%;
