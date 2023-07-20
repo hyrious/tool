@@ -156,10 +156,6 @@
       this.style.height = this.scrollHeight + 2 + 'px'
       calculate(q)
     }
-    input.disabled = false
-
-    input.value ||= decodeURIComponent(location.hash.slice(1))
-    input.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true }))
 
     function calculate(q) {
       mask.textContent = ''
@@ -320,8 +316,14 @@
         if (a[0] != b[0]) return a[0] > b[0] ? a : b
         if (a[1] != b[1]) return a[1] > b[1] ? a : b
         if (a[2] != b[2]) return a[2] > b[2] ? a : b
+        return a // a === b
       }, [0, 0, 0])
     }
+
+    input.disabled = false
+
+    input.value ||= decodeURIComponent(location.hash.slice(1))
+    input.dispatchEvent(new InputEvent('input', { bubbles: true, cancelable: true }))
   </script>
 </body>
 </html>
