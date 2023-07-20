@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Unzip</title>
+  <style>
+    body {
+      padding-bottom: 25px;
+      overflow: hidden;
+    }
+    main, section {
+      margin: 0 5%;
+      padding: 10px 0;
+      flex: 1;
+      overflow: hidden;
+      position: relative;
+      border: 2px dashed var(--control);
+      border-radius: 6px;
+    }
+    section label {
+      position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      pointer-events: none;
+    }
+    main {
+      padding: 15px 10px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto 1fr;
+      align-items: center;
+      gap: 10px;
+    }
+    main label {
+      padding-left: 5px;
+    }
+    main ul {
+      flex: 1;
+      align-self: stretch;
+      margin: 0;
+      padding: 0 0 0 5px;
+      list-style-type: none;
+      display: flex;
+      flex-direction: column;
+      max-width: 30vw;
+      overflow: auto;
+    }
+    main ul li {
+      display: block;
+    }
+    main ul li a {
+      display: block;
+      margin: 0 -4px;
+      padding: 4px;
+      text-decoration: none;
+      transition: background .1s, color .1s;
+    }
+    main ul li a:hover {
+      background: #7fdbff30;
+    }
+    main ul li a.active {
+      background: var(--front);
+      color: var(--back);
+    }
+    label a {
+      pointer-events: all;
+    }
+    aside {
+      position: fixed;
+      top: 0; left: 0; width: 0; height: 2px;
+      background: currentColor;
+      transition: width .2s;
+    }
+    article {
+      align-self: stretch;
+      padding: 10px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      overflow: auto;
+      font: 13px/18px monospace;
+    }
+    .dragging :is(section, main) {
+      border: 2px solid;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Unzip</h1>
+
+  <section id="prepare">
+    <label>Drop or <a id="upload" href="javascript:void 0">Upload</a> a ZIP file</label>
+  </section>
+
+  <main id="main" style="display: none;">
+    <label for="encoding">Filename encoding:</label>
+    <select id="encoding">
+      <option value="" disabled selected>select encoding</option>
+      <option>utf-8</option>
+      <option>cp437</option>
+      <option>ibm866</option>
+      <option>iso-8859-2</option>
+      <option>iso-8859-3</option>
+      <option>iso-8859-4</option>
+      <option>iso-8859-5</option>
+      <option>iso-8859-6</option>
+      <option>iso-8859-7</option>
+      <option>iso-8859-8</option>
+      <option>iso-8859-10</option>
+      <option>iso-8859-13</option>
+      <option>iso-8859-14</option>
+      <option>iso-8859-15</option>
+      <option>iso-8859-16</option>
+      <option>koi8-r</option>
+      <option>koi8-u</option>
+      <option>macintosh</option>
+      <option>windows-874</option>
+      <option>windows-1250</option>
+      <option>windows-1251</option>
+      <option>windows-1252</option>
+      <option>windows-1253</option>
+      <option>windows-1254</option>
+      <option>windows-1255</option>
+      <option>windows-1256</option>
+      <option>windows-1257</option>
+      <option>windows-1258</option>
+      <option>x-mac-cyrillic</option>
+      <option>gbk</option>
+      <option>gb18030</option>
+      <option>big5</option>
+      <option>euc-jp</option>
+      <option>iso-2022-jp</option>
+      <option>shift-jis</option>
+      <option>euc-kr</option>
+      <option>utf-16be</option>
+      <option>utf-16le</option>
+      <option>x-user-defined</option>
+    </select>
+    <label for="password">Password:</label>
+    <input id="password" type="password" placeholder="(no password)">
+    <ul id="files"></ul>
+    <article id="content"></article>
+  </main>
+
+  <aside id="progress"></aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/@zip.js/zip.js@2.7.20/dist/zip-full.min.js"></script>
+  <script>
+    document.getElementById('upload').onclick = async function upload() {
+      if (typeof showOpenFilePicker < 'u') {
+        try {
+          var handles = await showOpenFilePicker({
+            types: [{
+              description: 'ZIP files',
+              accept: { 'application/zip': ['.zip', '.docx', '.xlsx', '.pptx'] }
+            }],
+            excludeAcceptAllOption: false,
+            multiple: false,
+          })
+          var h_file = handles[0]
+          var blob = await h_file.getFile()
+          from_files([blob])
+        } catch (err) {
+          if ((err + '').includes('Abort')) return;
+          console.error(err)
+          alert(err + '')
+        }
+      } else {
+        if (this.$input) document.body.removeChild(this.$input);
+        this.$input = Object.assign(document.createElement('input'), {type: 'file'})
+        this.$input.style.display = 'none'
+        document.body.appendChild(this.$input)
+        $input.click()
+        $input.onchange = function from_input() {
+          from_files(this.files)
+        }
+      }
+    }
+
+    function preventDefault(cb) {
+      return function callback(ev) {
+        ev.preventDefault()
+        return cb.call(this, ev)
+      }
+    }
+
+    function is_dragging_files(e) {
+      return e.dataTransfer && e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') !== -1;
+    }
+
+    document.dragging = 0
+    document.ondragover = preventDefault(() => void 0)
+    document.ondragenter = preventDefault(function enter(ev) {
+      if (is_dragging_files(ev)) {
+        this.body.classList.add('dragging')
+        this.dragging++
+      }
+    })
+    document.ondragleave = preventDefault(function leave(ev) {
+      if (is_dragging_files(ev)) {
+        if (--this.dragging == 0) this.body.classList.remove('dragging')
+      }
+    })
+    document.ondrop = preventDefault(function drop(ev) {
+      this.dragging = 0
+      this.body.classList.remove('dragging')
+      if (ev.dataTransfer && ev.dataTransfer.files) from_files(ev.dataTransfer.files);
+    })
+    document.onpaste = function paste(ev) {
+      if (ev.clipboardData && ev.clipboardData.files) from_files(ev.clipboardData.files);
+    }
+
+    function from_files(blobs) {
+      if (blobs.length == 0) return;
+      if (blobs.length > 1) {
+        console.warn('only the first file will be processed, you just input ' + blobs.length + ' files')
+      }
+      var blob = blobs[0]
+      return unzip(blob)
+    }
+
+    var entries, selected = -1
+
+    async function unzip(blob) {
+      var encodingInput = document.getElementById('encoding')
+      entries = await (new zip.ZipReader(new zip.BlobReader(blob)).getEntries({
+        filenameEncoding: encodingInput.value || void 0
+      }))
+      if (entries && entries.length > 0) {
+        var filenamesUTF8 = entries.every(e => e.filenameUTF8)
+        var encrypted = entries.some(e => e.encrypted)
+        document.getElementById('prepare').style.display = 'none'
+        document.getElementById('main').style.display = ''
+
+        encodingInput.value = filenamesUTF8 ? "utf-8" : encodingInput.value || 'cp437'
+        encodingInput.disabled = filenamesUTF8
+
+        var passwordInput = document.getElementById('password')
+        passwordInput.value = ""
+        passwordInput.disabled = !encrypted
+
+        encodingInput.oninput = unzip.bind(null, blob)
+        passwordInput.oninput = refreshContent
+
+        refreshFilesList()
+      }
+    }
+
+    function refreshFilesList() {
+      var filesList = document.getElementById('files')
+      filesList.textContent = ''
+      for (var i = 0; i < entries.length; ++i) {
+        var entry = entries[i]
+        var li = document.createElement('li')
+        var a = document.createElement('a')
+        a.href = 'javascript:void 0'
+        a.dataset.index = i
+        a.textContent = entry.filename
+        var title = entry.filename + '\n  updated at ' + entry.lastModDate.toLocaleString()
+        if (!entry.directory) {
+          title += '\n  size: ' + entry.uncompressedSize.toLocaleString() + ' bytes'
+        }
+        a.title = title
+        li.appendChild(a)
+        filesList.appendChild(li)
+      }
+      filesList.onclick = selectFile
+    }
+
+    var lastActive = null
+    function selectFile(ev) {
+      if (lastActive) {
+        lastActive.classList.remove('active')
+      }
+      if (ev && ev.target && ev.target.dataset && ev.target.dataset.index) {
+        selected = parseInt(ev.target.dataset.index)
+        ev.target.classList.add('active')
+        lastActive = ev.target
+      } else {
+        selected = -1
+        lastActive = null
+      }
+      refreshContent()
+    }
+
+    var controller = null
+    async function refreshContent() {
+      var article = document.getElementById('content')
+      var progress = document.getElementById('progress')
+      var entry = entries[selected]
+      if (entry) {
+        var passwordInput = document.getElementById('password')
+        var password = passwordInput.value
+        controller && controller.abort()
+        controller = new AbortController
+        try {
+          var data = await entry.getData(new zip.Uint8ArrayWriter(), {
+            password,
+            signal: controller.signal
+          })
+          if (data.byteLength == 0) {
+            article.textContent = ''
+            return
+          }
+          var first_few_bytes = data.subarray(0, 8000)
+          if (Array.prototype.indexOf.call(first_few_bytes, 0) >= 0) {
+            article.textContent = '(can not open binary file)'
+            return
+          }
+          article.textContent = await entry.getData(new zip.TextWriter(), {
+            password,
+            onprogress(index, max) {
+              progress.style.width = (100 * index / max) + '%'
+            },
+            signal: controller.signal
+          })
+        } catch (err) {
+          if (!(err + '').includes('Abort')) throw err;
+        } finally {
+          progress.style.width = '0'
+        }
+      } else {
+        article.textContent = ''
+      }
+    }
+  </script>
+</body>
+</html>
