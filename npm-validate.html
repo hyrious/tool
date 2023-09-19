@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Validate NPM Package Name</title>
+  <style>
+    .content { display: flex; flex-flow: row wrap; gap: 5px }
+    #package-name { flex: 1 }
+    .output { flex-basis: 100% }
+  </style>
+</head>
+<body>
+  <h1 class="title">Validate NPM Package Name</h1>
+
+  <section class="content">
+    <label for="package-name">Package Name:</label>
+    <input id="package-name" autocomplete="off" autofocus placeholder="@foo/bar.buzz">
+    <div class="output"><output id="output"></output></div>
+  </section>
+
+  <script type="module">
+    import validate from 'https://esm.sh/validate-npm-package-name@5.0.0'
+
+    var input = document.getElementById('package-name')
+    var output = document.getElementById('output')
+    input.oninput = function () {
+      history.replaceState({}, "", this.value ? '#' + this.value : location.pathname)
+      var result = validate(this.value)
+      if (result.validForNewPackages) {
+        output.textContent = 'Valid!'
+      } else {
+        output.textContent = ''
+        var ul = document.createElement('ul')
+        for (var i = result.errors.length - 1; i >= 0; --i) {
+          var li = document.createElement('li')
+          li.textContent = result.errors[i]
+          ul.prepend(li, ul.children[0])
+        }
+        output.append(ul)
+      }
+    }
+
+    if (location.hash.length > 1) {
+      input.value = decodeURIComponent(location.hash.slice(1))
+      input.dispatchEvent(new InputEvent('input'))
+    }
+  </script>
+</body>
+</html>
