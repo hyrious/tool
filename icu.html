@@ -16,7 +16,7 @@
       background: var(--control);
     }
     .input { display: flex; gap: .5ch }
-    .input input { flex: 1 }
+    .input input[type=text] { flex: 1 }
     .output { padding-bottom: 250px }
     [data-feat] {
       outline: 1px solid var(--control);
@@ -52,6 +52,9 @@
       font: 14px/18px monospace;
       background: transparent;
     }
+    summary {
+      cursor: pointer;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.8.0/highlight.min.js"></script>
 </head><!--
@@ -74,7 +77,9 @@
 
   <section class="input">
     <label for="$picker">Target(s):</label>
-    <input id="$picker" placeholder="node14,chrome59">
+    <input id="$picker" type="text" placeholder="node14,chrome59">
+    <input id="$toggler" type="checkbox">
+    <label for="$toggler">Expand All</label>
   </section>
 
   <section class="output"></section>
@@ -99,9 +104,9 @@
     var j = code.indexOf('\n}', i)
     code = code.slice(i, j)
 
-    var data = Object.create(null), cur = null
+    var data = Object.create(null), cur = null, c
     for (const line of code.split('\n')) {
-      if (line.startsWith('\t\t')) {
+      if (/^\t\t[A-Z]/.test(line)) {
         var k1 = line.indexOf(':')
         var k2 = line.indexOf('{')
         var k3 = line.lastIndexOf('}')
@@ -260,6 +265,7 @@ x(class{}.b)`,
       Generator: `function* foo() { yield 1; yield 2 }`,
       Hashbang: `#!/usr/bin/env node`,
       ImportAssertions: `import pkg from './package.json' assert { type: 'json' }`,
+      ImportAttributes: `import pkg from './package.json' with { type: 'json' }`,
       ImportMeta: `import.meta.url`,
       InlineScript: `x = '<\/script>'`,
       LogicalAssignment: `x ||= 1`,
@@ -292,6 +298,7 @@ x(class{}.b)`,
     }
 
     function make_example(feat) {
+      if (!(feat in examples)) console.warn('missing example for ' + feat)
       var html = hljs.highlight(examples[feat] || '', { language: 'js', ignoreIllegals: true }).value
       return '<pre><code class="hljs">' + html + '</code></pre>'
     }
@@ -300,6 +307,18 @@ x(class{}.b)`,
       $picker.value = decodeURIComponent(location.hash.slice(1))
     }
     $picker.dispatchEvent(new InputEvent('input'))
+
+    $toggler.oninput = function toggle() {
+      if (this.checked) {
+        document.querySelectorAll('details').forEach(e => {
+          e.open = true
+        })
+      } else {
+        document.querySelectorAll('details[open]').forEach(e => {
+          e.open = false
+        })
+      }
+    }
   </script>
 </body>
 </html>
