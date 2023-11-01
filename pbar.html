@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Porgress Bar</title>
+  <style>
+    body {
+      margin: 50px;
+      font: 14px/20px sans-serif;
+      cursor: default;
+    }
+    samp {
+      width: 4ch;
+    }
+  </style>
+</head>
+<body>
+  <h1>Progress Bar</h1>
+
+  <div style="display: grid; align-items: center; gap: 5px;
+              grid-template: auto / auto 1fr auto;">
+    <label for="$value">Value:</label>
+    <input id="$value" type="range" min="0" max="100" step="0.1" value="0">
+    <samp data-value>0</samp>
+    <label for="$width">Columns:</label>
+    <input id="$width" type="range" min="1" max="200" step="1" value="80">
+    <samp data-width>80</samp>
+  </div>
+
+  <pre id="$output"></pre>
+
+  <script>
+    $value.oninput = $width.oninput = function refresh_values() {
+      document.querySelector('[data-value]').textContent = $value.value
+      document.querySelector('[data-width]').textContent = $width.value
+      render()
+    }
+    function render(value = +$value.value, width = +$width.value) {
+      var blocks = [" ", "▏","▎","▍","▌","▋","▊","▉","█"],
+          v = width * value / 100,
+          x = v | 0,
+          y = v - x,
+          i = Math.round(y * 8),
+          bar = "█".repeat(x) + blocks[i]
+      console.log(bar, value + '%')
+      $output.textContent = bar + ' '.repeat(width - x) + value + '%'
+    }
+    if (location.hash === '#year') {
+      var year = new Date().getFullYear(),
+          all  = new Date(year + 1, 0, 1) - new Date(year, 0, 1),
+          now  = new Date() - new Date(year, 0, 1)
+
+      $value.value = (now * 100 / all).toFixed(1)
+    }
+    render()
+  </script>
+</body>
+</html>
