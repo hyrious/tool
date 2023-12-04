@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>GitHub Peek</title>
+  <style>
+    i { display: inline-block; width: 24px; height: 24px }
+    button:has(i) { background: none; padding: 5px; border: none; color: inherit; font-size: 0; cursor: pointer }
+    button:disabled { opacity: .5 }
+    input { border: 1px solid WindowFrame; padding: 5px 15px; border-radius: 9999px }
+    .content { flex: 1; overflow: hidden; display: flex; flex-flow: column nowrap }
+    .token { font-size: 12px }
+    .navigator { display: flex; gap: 5px; max-width: 500px }
+    .navigator input { flex: 1 }
+    .tree { width: 30%; padding: 10px 0; overflow: auto; }
+    a.file, summary { cursor: pointer; padding: 4px 8px }
+    a.file { display: block }
+    summary::-webkit-details-marker { display: none }
+    details section { padding: 0 0 0 1em; margin: 0 }
+    .explorer { flex: 1; display: flex; flex-flow: row nowrap; overflow: hidden; }
+    .editor { flex: 1; overflow: auto }
+  </style>
+</head>
+<body>
+  <h1 class="title">GitHub Peek <a class="token" href="javascript:void 0">enter token</a></h1>
+
+  <section class="content">
+    <nav class="navigator"><button class="refresh"><i class="mdi-refresh"></i></button><input class="repo" placeholder="{owner}/{repo}"></nav>
+    <div class="explorer">
+      <div class="tree"></div>
+      <div class="editor"></div>
+    </div>
+  </section>
+
+  <script type="module">
+    let icons = new Set, i = 0
+    document.querySelectorAll('i[class^="mdi-"]').forEach(i => {
+      icons.add(i.className.slice(4))
+    })
+    icons = Array.from(icons)
+    const fetching = icons.map(i => fetch(`https://api.iconify.design/mdi:${i}.svg`).then(r => r.ok && r.text()))
+    let result = ''
+    for await (let icon of fetching) {
+      const name = icons[i]
+      const url = encodeSVG(icon)
+      const css = `i.mdi-${name}{-webkit-mask:url("data:image/svg+xml,${url}") no-repeat;-webkit-mask-size:100% 100%;background-color:currentColor;color:inherit}\n`
+      result += css
+    }
+    document.head.appendChild(document.createElement('style')).textContent = result
+    function encodeSVG(data) {
+      data = data.replace(/"/g, "'")
+      data = data.replace(/>\s{1,}</g, '><')
+      data = data.replace(/\s{2,}/g, ' ')
+      return data.replace(/[\r\n%#()<>?[\\\]^`{|}]/g, encodeURIComponent)
+    }
+  </script>
+
+  <script type="module">
+    import { Octokit } from "https://esm.sh/@octokit/core"
+    import { Text } from "https://esm.sh/@codemirror/state"
+    import { EditorView, drawSelection, lineNumbers } from "https://esm.sh/@codemirror/view"
+
+    const $ = e => document.querySelector(e)
+
+    let token = localStorage.getItem('github-token') || ''
+    let github = new Octokit({ auth: token })
+    globalThis.github = github
+
+    $('.token').onclick = function enter_token() {
+      token = prompt('Enter your GitHub token', token) || token
+      localStorage.setItem('github-token', token)
+      github = new Octokit({ auth: token })
+      globalThis.github = github
+    }
+
+    $('.refresh').onclick = function reload() {
+      this.disabled = true
+      $('.repo').onchange()
+      setTimeout(() => { this.disabled = false }, 1000)
+    }
+
+    $('.repo').oninput = function keep_state() {
+      sessionStorage.setItem('repo', this.value)
+    }
+    $('.repo').value = sessionStorage.getItem('repo')
+
+    $('.repo').onchange = function load() {
+      const spec = this.value.split('/')
+      if (spec.length == 2 && spec[0] && spec[1]) {
+        const [owner, repo] = spec
+        do_load(owner, repo)
+      }
+    }
+    $('.repo').value && $('.repo').onchange()
+
+    function do_load(owner, repo) {
+      const collator = new Intl.Collator(void 0, { numeric: true })
+      const cache = Object.create(null)
+
+      async function load_dir_to(root, dir = '') {
+        let json = cache[dir]
+        if (json == null) {
+          root.classList.add('loading')
+          const { data } = await github.request('GET /repos/{owner}/{repo}/contents' + dir, { owner, repo })
+          data.sort((a, b) => {
+            if (a.type === 'dir' && b.type !== 'dir') return -1;
+            if (a.type !== 'dir' && b.type === 'dir') return  1;
+            const order = collator.compare(a.name, b.name)
+            if (order !== 0) return order;
+            return a.name.length - b.name.length
+          })
+          cache[dir] = json = data
+        }
+        root.classList.remove('loading')
+
+        const prev = root.previousElementSibling
+        if (prev && prev.tagName == 'SUMMARY')
+          prev.dataset.size = json.length
+
+        for (const { name, type, size } of json) {
+          if (name.startsWith('_') || name.startsWith('.')) continue;
+          if (type === 'file') {
+            const a = document.createElement('a')
+            a.classList.add('file')
+            a.target = '_blank'
+            a.textContent = name
+            a.dataset.size = size
+            a.dataset.href = dir + '/' + name
+            a.onclick = () => load_text(a.dataset.href)
+            root.appendChild(a)
+          } else if (type === 'dir') {
+            const details = document.createElement('details')
+            const summary = document.createElement('summary')
+            const section = document.createElement('section')
+            summary.textContent = name
+            summary.onclick = () => {
+              summary.onclick = null
+              summary.classList.add('opened')
+              load_dir_to(section, dir + '/' + name)
+            }
+            details.appendChild(summary)
+            details.appendChild(section)
+            root.appendChild(details)
+          }
+        }
+      }
+
+      let view
+      const darkTheme = matchMedia('(prefers-color-scheme: dark')
+      async function load_text(path) {
+        const text = await fetch(`https://raw.gitmirror.com/${owner}/${repo}/HEAD${path}`).then(r => r.ok && r.text())
+        view && view.destroy()
+        if (!text) return;
+        view = new EditorView({
+          doc: text,
+          extensions: [drawSelection(), lineNumbers(), EditorView.theme({
+            '&': { color: 'var(--front)', backgroundColor: 'var(--back)' },
+            '&.cm-editor': { height: '100%' },
+            '.cm-scroller': { overflow: 'auto' },
+            '&.cm-editor.cm-focused': { outline: 'none' },
+            '.cm-content': { cursor: 'text' },
+            '.cm-activeLine': { backgroundColor: 'var(--back)', outline: '1px solid var(--back)' },
+            '.cm-activeLineGutter': { color: 'var(--front)', backgroundColor: 'var(--back)', outline: '1px solid var(--back)' },
+            '.cm-lineNumbers .cm-gutterElement': { paddingLeft: '12px', paddingRight: '8px' },
+            '.cm-lineNumbers .cm-gutterElement:hover': { color: 'var(--front)' },
+            '.cm-gutters': { backgroundColor: 'var(--back)', color: 'var(--front)', borderRightColor: 'var(--control)' },
+            '.cm-link': { cursor: 'pointer' },
+            '.cm-link:hover': { textDecoration: 'underline' },
+            '.cm-search.cm-panel': { display: 'flex', alignItems: 'center' },
+            '.cm-search.cm-panel label': { display: 'inline-flex', alignItems: 'center' },
+            '.cm-panels': { backgroundColor: 'var(--back)', color: 'var(--front)' },
+            '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--control)' }
+          })],
+          parent: $('.editor')
+        })
+      }
+
+      load_dir_to($('.tree'))
+    }
+  </script>
+</body>
+</html>
