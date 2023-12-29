@@ -156,9 +156,10 @@
     }
 
     function refresh(feats) {
+      var opened = new Set(Array.from(document.querySelectorAll('.output [open]')).map(e => e.dataset.feat))
       var out = ''
       for (var feat in feats) {
-        out += `<details data-feat="${feat}">
+        out += `<details data-feat="${feat}"${$toggler.checked || opened.has(feat) ? ' open' : ''}>
           <summary>${feat} <small>${rangestr(feats[feat])}</small></summary>
           <article>${example(feat)}</article>
         </details>`
