@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>NPM Repo</title>
+  <style>
+    .content {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 5px;
+      font-variant-numeric: tabular-nums;
+    }
+    label {
+      text-align: right;
+    }
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style-type: none;
+      line-height: 1.5;
+    }
+    .hint::before {
+      content: "(";
+      margin-left: 20px;
+    }
+    .hint::after {
+      content: ")";
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">NPM Repo</h1>
+
+  <section>
+    <div class="content" style="display: none;">
+      <label for="pkgname">Package Name:</label>
+      <input id="pkgname" spellcheck="false" autofocus="true" placeholder="vite">
+      <label for="repo">Repo:</label>
+      <input id="repo" readonly value="..."></input>
+      <label for="pattern">Pattern:</label>
+      <input id="pattern" readonly value="..."></input>
+      <label for="tags">Versions:</label>
+      <ul id="tags">...</ul>
+    </div>
+    <div class="loading">Loading&hellip;</div>
+    <div class="result"></div>
+  </section>
+
+  <script type="module">
+    import url from 'https://esm.sh/url@0.11.3'
+    url.URL = URL
+
+    import * as npmRepo from 'https://esm.sh/@hyrious/npm-repo@0.1.2'
+    globalThis.npmRepo = npmRepo
+
+    const $ = e => document.querySelector(e)
+    $('.loading').style.display = 'none'
+
+    $('.content').style.display = ''
+
+    let t = 0
+    $('#pkgname').onchange = function update() {
+      clearTimeout(t)
+      $('.loading').style.display = ''
+      $('#repo').value = $('#pattern').value = $('#tags').textContent = '...'
+      t = setTimeout(main, 400)
+      const text = this.value.trim()
+      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+    }
+
+    async function main() {
+      const current = $('#pkgname').value
+
+      const pkg = await npmRepo.packageJSON(current)
+      if (current !== $('#pkgname').value) {
+        $('.loading').style.display = 'none'
+        return;
+      }
+
+      const githubRepoUrl = npmRepo.githubRepo(pkg)
+      if (!githubRepoUrl) {
+        $('.result').textContent = `Repository URL not found in "${current}"`
+        $('.loading').style.display = 'none'
+        return;
+      }
+
+      const info = npmRepo.parseRepo(githubRepoUrl)
+      if (!info) {
+        $('.result').textContent = `Cannot handle repository URL "${githubRepoUrl}"`
+        $('.loading').style.display = 'none'
+        return;
+      }
+
+      const tags = await npmRepo.githubTags(info.repo)
+      if (current !== $('#pkgname').value) return;
+      if (tags.length == 0) {
+        $('.result').textContent = `No tags found in repository "${githubRepoUrl}"`
+        $('.loading').style.display = 'none'
+        return;
+      }
+
+      const suffix = info.folder ? '/' + info.folder : ''
+      const hints = [pkg.version, pkg.name + '@' + pkg.version]
+      if (info.folder) hints.push(info.folder);
+
+      const pattern = npmRepo.guessTagPattern(tags, hints)
+
+      console.log({ pattern, info, tags, pkg })
+      $('.loading').style.display = 'none'
+      $('.result').textContent = ''
+      $('#repo').value = `https://github.com/${info.repo}/tree/${pattern.replace('{}', pkg.version)}${suffix}`
+      $('#pattern').value = pattern
+      $('#tags').textContent = ''
+
+      const to_i = s => {
+        const n = +s
+        if (Number.isFinite(n)) return n
+        if (!s) return 0
+        const m = s.match(/\d+/)
+        return m ? +m[0] : 0
+      }
+      const pat = new RegExp(pattern.replace('{}', '(' + npmRepo.semver.source + ')'))
+      let m = null,
+          ver = tags.reduce((s, t) => ((m = t.match(pat)) && s.push(m[1]), s), [])
+                  .sort((a, b) => {
+                    const ma = a.match(npmRepo.semver), mb = b.match(npmRepo.semver)
+                    for (let i = 1; i <= 5; i++) if (ma[i] != mb[i])
+                      return to_i(mb[i]) - to_i(ma[i])
+                    return 0
+                  }),
+          len = ver.reduce((a, b) => Math.max(a, b.length), 0)
+      for (const v of ver) {
+        const li = $('#tags').appendChild(document.createElement('li'))
+        const a = li.appendChild(document.createElement('a'))
+        a.href = `https://github.com/${info.repo}/tree/${pattern.replace('{}', v)}` + suffix
+        a.target = '_blank'
+        a.textContent = v
+        a.onclick = (ev) => {
+          if (ev.altKey) {
+            ev.preventDefault()
+            const spec = [v, pkg.version].map(v => pattern.replace('{}', v)).join('...')
+            open(`https://github.com/${info.repo}/compare/${spec}`, '_blank')
+          }
+        }
+      }
+      const span = $('#tags li').appendChild(document.createElement('span'))
+      span.className = 'hint'
+      span.textContent = 'press alt/option to open the "compare" link'
+    }
+
+    const query = Object.fromEntries(new URLSearchParams(location.search))
+    if (query.q) {
+      $('#pkgname').value = query.q
+      main()
+    }
+  </script>
+</body>
+</html>
