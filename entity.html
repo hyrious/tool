@@ -26,7 +26,7 @@
 <body>
   <h1 class="title">Search HTML Entity</h1>
   <section class="content">
-    <label for="ascii">ASCII</label><input id="ascii" list="ascii-list" value="rarr" autofocus>
+    <label for="ascii">ASCII</label><input id="ascii" list="ascii-list" autofocus>
     <label for="unicode">Unicode</label><input id="unicode">
     <label for="alt">Alters</label><span id="alt" class="alt"></span>
   </section>
@@ -63,8 +63,13 @@
         }
         let ret = rev_data[$unicode.value.trim()]
         $alt.textContent = ret ? ret.slice(1).join(', ') : ''
+
+        let text = $ascii.value.trim()
+        history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
       }
 
+      const query = Object.fromEntries(new URLSearchParams(location.search))
+      $ascii.value = query.q || 'rarr'
       $ascii.dispatchEvent(new InputEvent('input'))
     })
   </script>
