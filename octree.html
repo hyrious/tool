@@ -31,8 +31,8 @@
     span {
       padding: 0 0.5rem;
     }
-    img, canvas {
-      max-width: 400px;
+    figcaption {
+      text-align: center;
     }
   </style>
 </head>
@@ -41,7 +41,8 @@
 
   <section class="controls">
     <label for="mc">Max Colors</label>
-    <input id="mc" type="number" value="256">
+    <input id="mc" type="range" value="256" min="8" max="256" step="1">
+    <samp id="mc_value"></samp>
   </section>
 
   <section class="content">
@@ -61,32 +62,60 @@
     f.labels[0].ondragenter = e => e.preventDefault() ^ fl.classList.add('active') ^ (dragging++)
     f.labels[0].ondragleave = e => e.preventDefault() ^ (--dragging === 0 && fl.classList.remove('active'))
     f.oninput = _ => update(f.files[0])
+    mc.onchange = _ => update(f.files[0], true)
+    mc.oninput = _ => mc_value.textContent = mc.value
+    mc.oninput()
+    let img = null, cache = null
 
-    function update(file) {
-      if (!file) return;
-      let img = new Image()
+    function update(file, use_cache = false) {
+      if (!file) {
+        return use_cache && cache ? main(clone(cache)) : null;
+      }
+      img = new Image()
       img.data = file.stream()
       img.type = file.type
       img.src = URL.createObjectURL(file)
-      img.onload = _ => URL.revokeObjectURL(img.src) ^ main(img)
+      img.onload = _ => URL.revokeObjectURL(img.src) ^ main(getPixels(img))
     }
 
     function getPixels(img) {
       const canvas = document.createElement('canvas')
-      const w = canvas.width = img.naturalWidth
-      const h = canvas.height = img.naturalHeight
+      const MAX_W = 640, MAX_H = 360
+      let w = img.naturalWidth, h = img.naturalHeight
+      if (w > MAX_W || h > MAX_H) {
+        console.warn('image too big, shrink before next steps')
+        let ratio = h / w
+        if (w > MAX_W) {
+          w = MAX_W
+          h = w * ratio
+        }
+        if (h > MAX_H) {
+          h = MAX_H
+          w = h / ratio
+        }
+      }
+      canvas.width = w
+      canvas.height = h
       const c = canvas.getContext('2d')
-      c.drawImage(img, 0, 0)
-      return c.getImageData(0, 0, w, h)
+      c.drawImage(img, 0, 0, w, h)
+      cache = c.getImageData(0, 0, w, h)
+      return clone(cache)
     }
 
-    function main(img) {
+    function clone(imageData) {
+      return new ImageData(
+        new Uint8ClampedArray(imageData.data),
+        imageData.width, imageData.height
+      )
+    }
+
+    function main(whatever) {
       // Reference:
       // https://observablehq.com/@tmcw/octree-color-quantization
       // https://github.com/NickeManarin/ScreenToGif/blob/-/ScreenToGif.Util/Codification/Gif/Encoder/Quantization/OctreeQuantizer.cs
       // https://github.com/olvb/colorcrush
 
-      const { width, height, data } = getPixels(img)
+      const { width, height, data } = whatever
       const pixels = new DataView(data.buffer)
       const { gen, Color } = octree
 
@@ -108,7 +137,11 @@
       img.style.imageRendering = 'pixelated'
       o.appendChild(img)
       o.appendChild(document.createElement('span')).textContent = '—'
-      o.appendChild(canvas)
+
+      const fig = document.createElement('figure')
+      fig.appendChild(canvas)
+      fig.appendChild(document.createElement('figcaption')).textContent = 'palette (' + palette.length + ')'
+      o.appendChild(fig)
 
       function paletteIndex(color) {
         let mindiff = Number.MAX_SAFE_INTEGER, index = -1
@@ -135,8 +168,8 @@
       }
       const imageData = new ImageData(new Uint8ClampedArray(pixels.buffer), width, height)
       const canvas2 = document.createElement('canvas')
-      canvas2.width = width
-      canvas2.height = height
+      img.width = canvas2.width = width
+      img.height = canvas2.height = height
       canvas2.style.imageRendering = 'pixelated'
       const c2 = canvas2.getContext('2d')
       c2.putImageData(imageData, 0, 0)
