@@ -97,7 +97,41 @@
       function receive({ data }) {
         const { id, diffs } = data
         const task = tasks.get(id)
-        if (task) task(diffs), tasks.delete(id);
+        if (task) {
+          simplify(diffs);
+          task(diffs);
+          tasks.delete(id);
+        }
+      }
+      // Filter out diffs that only identifiers ([_A-Za-z]+) changed.
+      function simplify(diffs) {
+        for (var i = 0, n = diffs.length; i < n - 2; i++) {
+          var a = diffs[i], b = diffs[i + 1];
+          if (a[0] === -1 && b[0] === 1) {
+            // Replace diffs[i] and diffs[i + 1] with diffs[i + 1] with its type changed to 0.
+            if (almost_equal(a[1], b[1])) {
+              // Delete [i], so that [i + 1] left. `i` will continue on (original) i + 2 line.
+              diffs.splice(i, 1); n--;
+              // Change the sign (+1/-1) to 0.
+              b[0] = 0;
+            }
+          }
+        }
+      }
+      var regex_ID = /^[_a-z][_a-z0-9]*/i;
+      function almost_equal(a, b) {
+        var match;
+        for (var i = 0, j = 0, aLen = a.length, bLen = b.length; i < aLen && j < bLen; i++, j++) {
+          if (a[i] === b[j]) continue;
+          // If found different char, both skip a word.
+          match = a.slice(i).match(regex_ID);
+          if (!match) return false;
+          i += match[0].length - 1;
+          match = b.slice(j).match(regex_ID);
+          if (!match) return false;
+          j += match[0].length - 1;
+        }
+        return i === aLen && j === bLen;
       }
       workers.forEach(worker => { worker.onmessage = receive })
       function spawn_worker(a, b) {
