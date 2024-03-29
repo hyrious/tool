@@ -118,11 +118,33 @@
           }
         }
       }
-      var regex_ID = /^[_a-z][_a-z0-9]*/i;
+      var regex_Num = /^\$?\d+/;
+      var regex_ID = /^[_a-z0-9\$]+/i;
       function almost_equal(a, b) {
-        var match;
+        var match, done;
         for (var i = 0, j = 0, aLen = a.length, bLen = b.length; i < aLen && j < bLen; i++, j++) {
           if (a[i] === b[j]) continue;
+
+          // If suffix number changed (which happens in esbuild renaming), skip the number.
+          done = false;
+          match = a.slice(i).match(regex_Num);
+          if (match) {
+            i += match[0].length - 1;
+            j--;
+            done = true;
+          }
+          match = b.slice(j).match(regex_Num);
+          if (match) {
+            j += match[0].length - 1;
+            i--;
+            if (done) {
+              i++;
+              j++;
+            }
+            done = true;
+          }
+          if (done) continue;
+
           // If found different char, both skip a word.
           match = a.slice(i).match(regex_ID);
           if (!match) return false;
