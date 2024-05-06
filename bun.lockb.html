@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>bun.lockb</title>
+  <style>
+  </style>
+</head>
+<body>
+  <h1 class="title">bun.lockb</h1>
+  <section class="content">
+    <div>
+      <label>
+        Upload <code>bun.lockb</code>:
+        <input id="$file" type="file">
+      </label>
+    </div>
+    <div><small>Try out this parser library: <a href="https://github.com/hyrious/bun.lockb" target="_blank">@hyrious/bun.lockb</a>.</small></div>
+    <pre id="$output" style="font-size: 12px;"></pre>
+  </section>
+  <script>
+    let mod = import('https://esm.sh/@hyrious/bun.lockb@0.0.3')
+    $file.oninput = async (ev) => {
+      let file = $file.files?.[0]
+      if (file) {
+        $output.textContent = 'Decoding...'
+        let { parse } = await mod
+        $output.textContent = parse(await file.arrayBuffer())
+      }
+    }
+  </script>
+</body>
+</html>
