@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>NPM Publish Info</title>
+  <style>
+    .row {
+      display: flex;
+      flex-flow: row nowrap;
+      gap: 8px;
+    }
+    .row > input {
+      flex: 1;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">NPM Publish Info</h1>
+
+  <section style="max-width: 600px;">
+    <div class="row">
+      <input id="$package_name" type="text" placeholder="package name">
+      <button id="$fetch">FETCH</button>
+    </div>
+    <pre id="$output"></pre>
+  </section>
+
+  <script>
+    $package_name.oninput = function save() {
+      var text = this.value.trim()
+      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+    }
+
+    $fetch.onclick = function main() {
+      this.disabled = true
+      $output.textContent = 'loading...'
+      fetch('https://registry.npmjs.org/' + $package_name.value.trim()).then(r => r.json()).then(done)
+    }
+
+    function done(json) {
+      $fetch.disabled = false
+      var out = []
+      var t = json.time
+      var v = json.versions
+      Object.keys(v).reverse().forEach(function (version) {
+        var time = new Date(t[version]).toLocaleString('zh-CN')
+        var user = user_str(v[version]._npmUser)
+        out.push(version + ' - ' + time + ' by ' + user)
+      })
+      $output.textContent = out.join('\n')
+    }
+
+    function user_str(user) {
+      var out = user.name
+      if (user.email) out += ' <' + user.email + '>'
+      return out
+    }
+
+    var text = new URLSearchParams(location.search).get('q')
+    if (text) {
+      $package_name.value = text
+      $package_name.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      $fetch.click()
+    }
+  </script>
+</body>
+</html>
