@@ -27,9 +27,10 @@
   <div id="app">Loading&hellip;</div>
   <div id="return" style="display: none">
     <a href="/">Return Home</a>
+    <a href="/" id="toggle-i">Toggle Simplify Identifiers</a>
   </div>
   <div id="main" style="display: none">
-    <p id="preview">Usage: diff-npm.html?a=<ins>pkg1/file.js</ins>&b=<ins>pkg2/file.js</ins>&s=<ins>1</ins>&f=<ins>l</ins></p>
+    <p id="preview">Usage: diff-npm.html?a=<ins></ins>&b=<ins></ins>&s=<ins>1</ins>&f=<ins>l</ins>&i=<ins>1</ins></p>
     <div id="form">
       <label for="a">a: </label><input id="a" placeholder=@types/react@17/index.d.ts>
       <label for="b">b: </label><input id="b" placeholder=@types/react@18/index.d.ts>
@@ -38,6 +39,7 @@
         <input id="fl" type="radio" name="f" checked><label for="fl"> l = line by line (default)</label>
         <input id="fs" type="radio" name="f"><label for="fs"> s = side by side</label>
       </div>
+      <label for="i">i: </label><div><input id="i" type="checkbox" checked><label for="i"> fold identifier-only changes</label></div>
     </div>
     <button id="btn">submit</button>
   </div>
@@ -98,7 +100,7 @@
         const { id, diffs } = data
         const task = tasks.get(id)
         if (task) {
-          simplify(diffs);
+          if (search.i) simplify(diffs);
           task(diffs);
           tasks.delete(id);
         }
@@ -257,6 +259,9 @@
       app.style.display = 'none'
       $('#return').style.display = ''
       $('#return a').href = location.pathname
+      var next_url = new URL(location.href)
+      next_url.searchParams.set('i', search.i ? '' : '1')
+      $('#toggle-i').href = next_url.toString()
 
       var raw_lines = text.split('\n')
       if (raw_lines.length < 4000) {
@@ -454,18 +459,20 @@
     function fail() {
       app.style.display = 'none'
       $('#main').style.display = ''
-      $('#a').oninput = $('#b').oninput = $('#s').oninput = $('#fl').oninput = $('#fs').oninput = () => {
-        const [a, b, s, f] = $('#preview').querySelectorAll('ins')
-        a.textContent = $('#a').value || $('#a').placeholder
-        b.textContent = $('#b').value || $('#b').placeholder
+      $('#a').oninput = $('#b').oninput = $('#s').oninput = $('#fl').oninput = $('#fs').oninput = $('#i').oninput = () => {
+        const [a, b, s, f, i] = $('#preview').querySelectorAll('ins')
+        a.textContent = $('#a').value
+        b.textContent = $('#b').value
         s.textContent = $('#s').checked ? 1 : ''
         f.textContent = $('#fs').checked ? 's' : ''
+        i.textContent = $('#i').checked ? 1 : ''
       }
       $('#btn').onclick = () => {
         location.search = '?' + new URLSearchParams({
           a: $('#a').value, b: $('#b').value,
           s: $('#s').checked ? 1 : '',
-          f: $('#fs').checked ? 's' : ''
+          f: $('#fs').checked ? 's' : '',
+          i: $('#i').checked ? 's' : '',
         })
       }
     }
