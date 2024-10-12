@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Scrollable</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    .row {
+      display: flex;
+      flex-flow: row wrap;
+      gap: 0.5em;
+    }
+    .scrollable {
+      width: 200px;
+      height: 200px;
+      border: 1px solid;
+      overflow: auto;
+
+      &.native {
+        scrollbar-color: currentColor transparent;
+
+        &:hover {
+          scrollbar-color: green transparent;
+        }
+
+        &.thin {
+          scrollbar-width: thin;
+        }
+
+        &.thin2 {
+          scrollbar-width: thin;
+
+          &:hover {
+            scrollbar-width: auto;
+          }
+        }
+
+        &.none {
+          scrollbar-width: none;
+        }
+
+        &.none2 {
+          scrollbar-width: none;
+
+          &:hover {
+            scrollbar-width: auto;
+          }
+        }
+      }
+    }
+    .fake-content {
+      height: 500px;
+      display: grid;
+      padding-top: 1em;
+      place-content: start center;
+    }
+    .scrollbar {
+      --scrollbar-width: 6px;
+      --scrollbar-thumb-size: 1em;
+      --scrollbar-thumb-top: 0px;
+      position: sticky;
+      top: 0;
+      left: 100%;
+      width: 0;
+      height: 0;
+      overflow: visible;
+    }
+    .scrollbar-track {
+      position: absolute;
+      inset: 0 0 0 auto;
+      padding: 3px;
+      box-sizing: border-box;
+      user-select: none;
+    }
+    .scrollbar-thumb {
+      position: absolute;
+      inset: 3px 3px 3px auto;
+      width: var(--scrollbar-width);
+      border-radius: 0.25em;
+      background-color: #79797966;
+      transition: width 800ms 500ms;
+    }
+    .scrollbar-thumb::after {
+      content: "";
+      position: absolute;
+      top: var(--scrollbar-thumb-top);
+      width: var(--scrollbar-width);
+      min-height: 1em;
+      max-height: calc(100% - 3px * 2);
+      height: var(--scrollbar-thumb-size);
+      border-radius: 0.25em;
+      background-color: #dddddd66;
+      transition: width 800ms 500ms, background-color 100ms;
+    }
+    .scrollbar-thumb:active,
+    .scrollbar-thumb:hover {
+      --scrollbar-width: 8px;
+      transition: width 100ms;
+    }
+    .scrollbar-thumb:active::after,
+    .scrollbar-thumb:hover::after {
+      background-color: ButtonBorder;
+      transition: width 100ms, background-color 100ms;
+    }
+  </style>
+</head>
+<body>
+  <div class="row">
+    <div class="scrollable">
+      <div class="fake-content">Default</div>
+    </div>
+    <div class="scrollable native">
+      <div class="fake-content">Native</div>
+    </div>
+    <div class="scrollable native thin">
+      <div class="fake-content">Native thin</div>
+    </div>
+    <div class="scrollable native thin2">
+      <div class="fake-content">Native thin2</div>
+    </div>
+    <div class="scrollable native none">
+      <div class="fake-content">Native none</div>
+    </div>
+    <div class="scrollable native none2">
+      <div class="fake-content">Native none2</div>
+    </div>
+    <div class="scrollable native none simulated">
+      <div class="fake-content">Native simulated</div>
+    </div>
+  </div>
+
+  <script type="module">
+    const $ = (a) => {
+      const [tag, ...classes] = a.split('.')
+      const el = document.createElement(tag || 'div')
+      el.className = classes.join(' ')
+      return el
+    }
+
+    let root = document.querySelector('.simulated')
+    root.style.position = 'relative'
+
+    let scrollbar = $('.scrollbar')
+    let track = $('.scrollbar-track')
+    let thumb = $('.scrollbar-thumb')
+
+    const calc = () => {
+      const padding = 3
+      const scrollbarWidth = 6
+      const scrollRange = root.scrollHeight - root.clientHeight
+      const thumbHeight = root.clientHeight * root.clientHeight / root.scrollHeight
+      const thumbRange = root.clientHeight - padding * 2 - thumbHeight
+      const percent = root.scrollTop / scrollRange
+      const thumbTop = percent * thumbRange
+      return { padding, scrollbarWidth, scrollRange, thumbTop, thumbRange, thumbHeight }
+    }
+
+    const clamp = (a, min, max) => a < min ? min : a > max ? max : a
+
+    track.onpointerdown = (ev) => {
+      track.setPointerCapture(ev.pointerId)
+
+      const { top, height } = track.getBoundingClientRect()
+      const { padding, scrollRange, thumbTop, thumbRange, thumbHeight } = calc()
+      const thumbStart = thumbTop + padding
+      const thumbEnd = thumbTop + thumbHeight + padding
+
+      const updateScrollTop = (relativeY) => {
+        const targetThumbTop = relativeY - thumbHeight / 2
+        const targetPercent = clamp(targetThumbTop / thumbRange, 0, 1)
+        const targetScrollTop = targetPercent * scrollRange
+        root.scrollTop = targetScrollTop
+      }
+
+      let relativeY = ev.clientY - top
+      if (!(thumbStart < relativeY && relativeY < thumbEnd)) {
+        updateScrollTop(relativeY)
+      }
+      // Fix relativeY to current thumb position.
+      const { thumbTop: latestThumbTop } = calc()
+      relativeY = latestThumbTop + thumbHeight / 2
+
+      track.onpointermove = (ev2) => {
+        updateScrollTop(relativeY + ev2.clientY - ev.clientY)
+      }
+    }
+
+    document.addEventListener('pointerup', () => {
+      track.onpointermove = null
+    })
+
+    const update = () => {
+      const { padding, scrollbarWidth, thumbTop, thumbHeight } = calc()
+      track.style.height = root.clientHeight + 'px'
+      track.style.width = (scrollbarWidth + padding * 2) + 'px'
+      thumb.style.setProperty('--scrollbar-thumb-top', thumbTop.toFixed(2) + 'px')
+      thumb.style.setProperty('--scrollbar-thumb-size', thumbHeight.toFixed(2) + 'px')
+    }
+    root.addEventListener('scroll', update)
+    update()
+
+    scrollbar.appendChild(track).appendChild(thumb)
+    root.prepend(scrollbar)
+  </script>
+</body>
+</html>
