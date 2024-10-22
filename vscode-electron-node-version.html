@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VS Code Electron Node Version</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    p {
+      margin: 0;
+      padding: 1em;
+      font: 1.5em / 1 system-ui;
+    }
+    .note {
+      padding: 0 1.5em 1.5em;
+      opacity: .8;
+    }
+  </style>
+</head>
+<body>
+  <p id="$output">Loading&hellip;</p>
+  <div class="note">Data is from the latest VS Code source code, not the stable release.</div>
+  <script type="module">
+    let query = [
+      fetch('https://raw.gitmirror.com/microsoft/vscode/refs/heads/main/.npmrc'),
+      fetch('https://raw.gitmirror.com/microsoft/vscode/refs/heads/main/.nvmrc'),
+    ]
+    let versions = { electron: '', node: '' }
+    globalThis.versions = versions
+    for await (let response of query) {
+      let raw = await response.text(), m
+      if (response.ok) {
+        if (m = raw.match(/target="(.+)"/))
+          versions.electron = m[1]
+        else
+          versions.node = raw.trim()
+      }
+    }
+    $output.textContent = `Electron ${versions.electron}, Node.js ${versions.node}`
+    let response = await fetch('https://cdn.jsdelivr.net/npm/electron-to-chromium/versions.json')
+    if (response.ok) {
+      let table = await response.json()
+      let major = versions.electron.split('.').slice(0, 2)
+      let chromium
+      for (let minor = major[1]; minor >= 0; minor--) {
+        let key = major[0] + '.' + minor
+        if (chromium = table[key]) break;
+      }
+      if (chromium) {
+        versions.chromium = chromium
+        $output.append(`, Chromium ${chromium}`)
+      }
+    }
+  </script>
+</body>
+</html>

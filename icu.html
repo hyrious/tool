@@ -261,6 +261,7 @@ class Foo {
       ExportStarAs: `export * as foo from './foo'`,
       ForAwait: `for await (var chunk of response) {}`,
       ForOf: `for (var item of iterable) {}`,
+      FunctionNameConfigurable: `Object.defineProperty(fn, { name: 'foo' })`,
       FunctionOrClassPropertyAccess: `x(function(){}.b)
 x(class{}.b)`,
       Generator: `function* foo() { yield 1; yield 2 }`,
