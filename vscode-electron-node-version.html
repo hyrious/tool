@@ -9,46 +9,75 @@
     p {
       margin: 0;
       padding: 1em;
-      font: 1.5em / 1 system-ui;
-    }
-    .note {
-      padding: 0 1.5em 1.5em;
-      opacity: .8;
+      font: 1.5em / normal system-ui;
+      white-space: pre-wrap;
+      font-variant-numeric: tabular-nums;
     }
   </style>
 </head>
 <body>
   <p id="$output">Loading&hellip;</p>
-  <div class="note">Data is from the latest VS Code source code, not the stable release.</div>
   <script type="module">
-    let query = [
-      fetch('https://raw.gitmirror.com/microsoft/vscode/refs/heads/main/.npmrc'),
-      fetch('https://raw.gitmirror.com/microsoft/vscode/refs/heads/main/.nvmrc'),
-    ]
-    let versions = { electron: '', node: '' }
-    globalThis.versions = versions
-    for await (let response of query) {
-      let raw = await response.text(), m
+    async function electron(tag = 'main') {
+      let response = await fetch(`https://raw.githubusercontent.com/microsoft/vscode/${tag}/.npmrc`)
       if (response.ok) {
-        if (m = raw.match(/target="(.+)"/))
-          versions.electron = m[1]
-        else
-          versions.node = raw.trim()
+        let raw = await response.text()
+        return raw.match(/target="(.+)"/)?.[1]
       }
     }
-    $output.textContent = `Electron ${versions.electron}, Node.js ${versions.node}`
-    let response = await fetch('https://cdn.jsdelivr.net/npm/electron-to-chromium/versions.json')
-    if (response.ok) {
-      let table = await response.json()
-      let major = versions.electron.split('.').slice(0, 2)
-      let chromium
-      for (let minor = major[1]; minor >= 0; minor--) {
-        let key = major[0] + '.' + minor
-        if (chromium = table[key]) break;
+
+    async function nodejs(tag = 'main') {
+      let response = await fetch(`https://raw.githubusercontent.com/microsoft/vscode/${tag}/.nvmrc`)
+      if (response.ok) {
+        let raw = await response.text()
+        return raw.trim()
       }
-      if (chromium) {
-        versions.chromium = chromium
-        $output.append(`, Chromium ${chromium}`)
+    }
+
+    let electron_to_chromium = fetch('https://cdn.jsdelivr.net/npm/electron-to-chromium/versions.json').then(r => r.ok && r.json())
+    async function chromium(electron) {
+      let [major, minor] = electron.split('.').slice(0, 2)
+      let table = await electron_to_chromium
+      if (table) {
+        let result
+        for (; minor >= 0; minor--) {
+          let key = major + '.' + minor
+          if (result = table[key]) break;
+        }
+        return result
+      }
+    }
+
+    async function electron_and_chromium(tag = 'main') {
+      let a = await electron(tag)
+      if (a) {
+        let b = await chromium(a)
+        if (b) {
+          return { electron: a, chromium: b }
+        }
+      }
+    }
+
+    async function work(tag = 'main') {
+      let [a, b] = await Promise.all([electron_and_chromium(tag), nodejs(tag)])
+      return { ...a, nodejs: b }
+    }
+
+    async function vscode() {
+      let response = await fetch('https://api.github.com/repos/microsoft/vscode/releases/latest')
+      if (response.ok) {
+        let {tag_name} = await response.json()
+        return tag_name
+      }
+    }
+
+    let done = false
+    let tag = await vscode()
+    if (tag) {
+      let [latest, stable] = await Promise.all([work('main'), work(tag)])
+      if (latest && stable) {
+        let f = v => `Electron: ${v.electron}, Node.js ${v.nodejs}, Chromium: ${v.chromium}`
+        $output.textContent = `${tag}:\t${f(stable)}\nmain:\t${f(latest)}`
       }
     }
   </script>
