@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Svelte</title>
+  <meta name="color-scheme" content="light dark">
+  <style>
+    html {
+      height: 100%;
+      display: grid;
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      tab-size: 2;
+    }
+    * {
+      box-sizing: inherit;
+      scrollbar-width: inherit;
+    }
+    body {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 0.5em;
+    }
+    input, textarea {
+      padding: 0.25em 0.375em;
+    }
+    textarea {
+      font-family: monospace;
+    }
+    .flex {
+      display: flex;
+      gap: 0.5em;
+      align-items: center;
+      user-select: none;
+    }
+    .grid-2x2 {
+      display: grid;
+      grid-template: auto 1fr auto 1fr / 1fr 1fr;
+      gap: 0.5em;
+    }
+    .grid-2x2 > :nth-child(1) { order: 0 }
+    .grid-2x2 > :nth-child(2) { order: 2 }
+    .grid-2x2 > :nth-child(3) { order: 1 }
+    .grid-2x2 > :nth-child(4) { order: 3 }
+    .grid-2x2 > :nth-child(5) { order: 5 }
+    .grid-2x2 > :nth-child(6) { order: 4 }
+    .output {
+      grid-row: span 2;
+    }
+    .runes {
+      position: fixed;
+      right: anchor(right);
+      top: anchor(top);
+      padding: 0.5em;
+    }
+    html:has(#\$raw:checked) .runes {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="flex">
+    <label>dev:<input id="$dev" type="checkbox"></label>
+    <label>generate:<input id="$generate" type="checkbox" checked><span id="$generate_label">client</span></label>
+    <label>output:<input id="$raw" type="checkbox"><span id="$raw_label">text</span></label>
+  </div>
+
+  <div class="grid-2x2">
+    <input id="$file1" value="App.svelte">
+    <textarea id="$content1">&lt;img&gt;</textarea>
+    <textarea class="output" id="$output1" class="output" style="anchor-name: --output1"></textarea>
+    <input id="$file2" value="lib.svelte.js">
+    <textarea id="$content2">export const todo = $state([])</textarea>
+    <textarea class="output" id="$output2" class="output" style="anchor-name: --output2"></textarea>
+  </div>
+
+  <div id="$runes1" class="runes" style="position-anchor: --output1">⚡️Runes</div>
+  <div id="$runes2" class="runes" style="position-anchor: --output2">⚡️Runes</div>
+
+  <script>
+    var im = document.createElement('script')
+    im.type = 'importmap'
+    im.textContent = JSON.stringify({
+      imports: {
+        'svelte/': 'https://esm.sh/svelte/',
+        'indent-textarea': 'https://esm.sh/indent-textarea',
+      }
+    })
+    im = document.head.append(im)
+  </script>
+  <script type="module">
+    import {enableTabToIndent} from 'indent-textarea'
+    enableTabToIndent($content1)
+    enableTabToIndent($content2)
+
+    $dev.oninput = refresh
+    $generate.oninput = refresh
+    $raw.oninput = refresh
+    $file1.oninput = refresh
+    $file2.oninput = refresh
+    $content1.oninput = refresh
+    $content2.oninput = refresh
+
+    import * as compiler from 'svelte/compiler'
+    globalThis.compiler = compiler
+
+    var data = JSON.parse(sessionStorage.getItem('input') || '{}')
+    document.querySelectorAll('[id]:is(input, textarea)').forEach(function persist(element) {
+      if (data[element.id] != null) {
+        if (typeof data[element.id] == 'boolean') {
+          element.checked = data[element.id]
+        } else {
+          element.value = data[element.id]
+        }
+      }
+    })
+
+    function refresh() {
+      document.querySelectorAll('[id]:is(input, textarea)').forEach(function persist(element) {
+        data[element.id] = element.type == 'checkbox' ? element.checked : element.value
+      })
+      sessionStorage.setItem('input', JSON.stringify(data))
+
+      var generate = $generate.checked ? 'client' : 'server'
+      $generate_label.textContent = generate
+      $raw_label.textContent = $raw.checked ? 'raw' : 'code'
+
+      try {
+        var result = compiler.compile($content1.value, { filename: $file1.value, dev: $dev.checked, generate })
+        $output1.value = $raw.checked ? JSON.stringify(result, null, 2) : result.js.code
+        $runes1.style.display = result.metadata.runes ? '' : 'none'
+      } catch (e) {
+        $output1.value = `${e.name}: ${e.message}\n${e.frame ?? ''}`
+        $runes1.style.display = 'none'
+      }
+
+      try {
+        var result = compiler.compileModule($content2.value, { filename: $file2.value, dev: $dev.checked, generate })
+        $output2.value = $raw.checked ? JSON.stringify(result, null, 2) : result.js.code
+        $runes2.style.display = result.metadata.runes ? '' : 'none'
+      } catch (e) {
+        $output2.value = `${e.name}: ${e.message}\n${e.frame ?? ''}`
+        $runes2.style.display = 'none'
+      }
+    }
+
+    refresh()
+  </script>
+</body>
+</html>
