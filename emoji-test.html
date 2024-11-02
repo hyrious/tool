@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emoji Test</title>
+  <meta name="color-scheme" content="light dark">
+  <script type="module">
+    import { polyfillCountryFlagEmojis } from "https://cdn.skypack.dev/country-flag-emoji-polyfill";
+    polyfillCountryFlagEmojis();
+  </script>
+  <style>
+    dd { white-space: pre-wrap }
+    .no { font-family: Iosevka }
+    .yes { font-family: "Twemoji Country Flags", Iosevka }
+  </style>
+</head>
+<body>
+  <p>Do all 3 emojis look correctly on your device? </p>
+  <dl>
+    <dt>Without <a href="https://github.com/talkjs/country-flag-emoji-polyfill">polyfill</a>:</dt>
+    <dd class="no">abc🖍️✏️🇺🇸123
+abcXXXXXX123</dd>
+    <dt>With polyfill:</dt>
+    <dd class="yes">abc🖍️✏️🇺🇸123
+abcXXXXXX123</dd>
+  </dl>
+</body>
+</html>
