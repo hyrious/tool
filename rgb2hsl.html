@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>RGB to HSL</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <style>
+    .content {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      grid-gap: 8px;
+      align-items: center;
+      font-family: monospace;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">RGB to HSL</h1>
+  <section class="content">
+    <label for="$rgb">RGB</label>
+    <input id="$rgb" placeholder="r, g, b or #rrggbb" disabled>
+    <label for="$hsl">HSL</label>
+    <input id="$hsl" placeholder="h, s, l or hsl(h, s, l)" disabled>
+  </section>
+  <section class="info">
+    
+  </section>
+  <script src="https://cdn.jsdelivr.net/npm/culori"></script>
+  <script>
+    console.log('culori =', globalThis.culori = culori)
+    $rgb.disabled = $hsl.disabled = false
+
+    let hsl = culori.converter('hsl')
+    $rgb.oninput = function update_hsl() {
+      let v = this.value.trim()
+      if (v == '') return;
+      let value = this.value.includes(',') ? `rgb(${this.value})` : this.value
+      let color = culori.parse(value)
+      let final = culori.formatHsl(hsl(color))
+      $hsl.value = final
+    }
+
+    let rgb = culori.converter('rgb')
+    $hsl.oninput = function update_rgb() {
+      let v = this.value.trim()
+      if (v == '') return;
+      let value = this.value.includes('(') ? this.value : `hsl(${this.value})`
+      let color = culori.parse(value)
+      let final = culori.formatHex(rgb(color))
+      $rgb.value = final
+    }
+
+    $rgb.onpointerdown = $hsl.onpointerdown = function setup(ev) {
+      let input = this
+      if (document.activeElement !== input) {
+        input.setPointerCapture(ev.pointerId)
+        document.addEventListener("pointerup", function selectAll() {
+          if (input.selectionStart == input.selectionEnd) input.select();
+          document.removeEventListener("pointerup", selectAll)
+        })
+      }
+    }
+  </script>
+</body>
+</html>
