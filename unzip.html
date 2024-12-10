@@ -46,13 +46,16 @@
       display: flex;
       flex-direction: column;
       max-width: 30vw;
-      overflow: auto;
+      overflow: hidden auto;
     }
     main ul li {
       display: block;
     }
     main ul li a {
       display: block;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
       margin: 0 -4px;
       padding: 4px;
       text-decoration: none;
@@ -229,6 +232,9 @@
         filenameEncoding: encodingInput.value || void 0
       }))
       if (entries && entries.length > 0) {
+        if (blob.name) {
+          document.querySelector('.title').textContent = blob.name
+        }
         var filenamesUTF8 = entries.every(e => e.filenameUTF8)
         var encrypted = entries.some(e => e.encrypted)
         document.getElementById('prepare').style.display = 'none'
@@ -304,8 +310,24 @@
             article.textContent = ''
             return
           }
-          var first_few_bytes = data.subarray(0, 8000)
+          var first_few_bytes = data.subarray(0, 8000), is_binary
           if (Array.prototype.indexOf.call(first_few_bytes, 0) >= 0) {
+            is_binary = true
+          }
+          if (is_binary) {
+            // PNG https://github.com/sindresorhus/file-type/blob/main/core.js#L1155
+            if (check(first_few_bytes, [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])) {
+              var blob = new Blob([data], { type: 'image/png'})
+              var img = document.createElement('img')
+              img.src = URL.createObjectURL(blob)
+              await img.decode()
+              article.textContent = ''
+              article.appendChild(img)
+              var meta = document.createElement('div')
+              meta.innerHTML = `(${img.width}&times;${img.height})`
+              article.append(meta)
+              return
+            }
             article.textContent = '(can not open binary file)'
             return
           }
@@ -324,6 +346,14 @@
       } else {
         article.textContent = ''
       }
+    }
+
+    function check(bytes, signature) {
+      if (bytes.length < signature.length) return false;
+      for (var i = 0; i < signature.length; i++) {
+        if (bytes[i] !== signature[i]) return false;
+      }
+      return true;
     }
   </script>
 </body>
