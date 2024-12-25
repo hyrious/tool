@@ -48,6 +48,11 @@
       margin-right: 5px;
       opacity: .5;
     }
+    .stars {
+      margin-left: 5px;
+      font-size: 0.8em;
+      color: light-dark(#B39200, #FFCF00);
+    }
     li.err {
       background-color: rgba(255, 127, 0, 0.2);
     }
@@ -114,7 +119,13 @@
           }
           var a = li.appendChild(document.createElement('a'))
           a.href = e.html_url
+          a.target = '_blank'
           a.textContent = e.full_name
+          if (e.stargazers_count) {
+            var stars = li.appendChild(document.createElement('span'))
+            stars.className = 'stars'
+            stars.textContent = '★ ' + e.stargazers_count
+          }
           var time = li.appendChild(document.createElement('time'))
           time.textContent = e.created_at.slice(0, 10)
           time.datetime = e.created_at
