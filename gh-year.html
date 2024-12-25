@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>GitHub Repos Created This Year</title>
+  <style>
+    .env {
+      font: 1rem/1.5 monospace;
+    }
+    .rate {
+      opacity: 0.5;
+    }
+    .loading {
+      animation: blinking 1s infinite alternate;
+    }
+    @keyframes blinking {
+      0% { opacity: .1 }
+      to { opacity: .9 }
+    }
+    .list {
+      margin: 0 0 50px;
+      padding: 0;
+      list-style-type: none;
+      display: flex;
+      flex-flow: column wrap;
+      gap: 8px;
+    }
+    .list li {
+      line-height: 1.5;
+      background-color: rgba(127,127,127,.2);
+      padding: 8px;
+      border-radius: 2px;
+    }
+    .list li time {
+      font-variant-numeric: tabular-nums;
+      margin-left: 8px;
+      opacity: .6;
+    }
+    .list li p {
+      margin: 0;
+      opacity: .8;
+    }
+    .tag {
+      margin-right: 5px;
+      opacity: .5;
+    }
+    li.err {
+      background-color: rgba(255, 127, 0, 0.2);
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">What have I done in this year?</h1>
+  <section class="env">
+    <label>USERNAME <input id="$username" autocomplete="off" autofocus></label><br>
+    <label>
+      <a href="https://github.com/settings/tokens" tabindex="-1" target="_blank" rel="noreferrer">GH TOKEN</a>
+      <input id="$token" type="password" autocomplete="off" style="width: 42ch;"> (Optional)
+    </label><br>
+    <label>AFTERMON <input id="$mon" type="month"></label><br>
+    <button onclick="main()">FETCH</button>
+    <label><input id="$fork" type="checkbox"> With fork</label>
+    <span class="rate" title="rate limit" id="$rate"></span>
+    <span class="loading" id="$loading" style="display: none">Loading...</span>
+    <span class="count" id="$count"></span>
+  </section>
+  <section class="result">
+    <ul class="list" id="$result"></ul>
+  </section>
+  <script>
+    $mon.value = new Date().getFullYear() + '-01'
+
+    async function main() {
+      $result.textContent = ''
+      var username = $username.value, token = $token.value, after = new Date($mon.value), fork = $fork.checked
+
+      if (!username) return err('No username.');
+      if (!Number.isFinite(+after)) return err('Invalid month.');
+      $loading.style.display = ''
+
+      var page = 1, last_created
+      do {
+        var response = await fetch(`https://api.github.com/users/${username}/repos?type=owner&sort=created&page=${page++}`, {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            Authorization: token ? "Bearer " + token : void 0
+          }
+        })
+        if (!response.ok) {
+          return err(await response.text())
+        }
+
+        var limit = response.headers.get('x-ratelimit-limit')
+        var remaining = response.headers.get('x-ratelimit-remaining')
+        $rate.textContent = `${remaining}/${limit}`
+        $loading.style.display = 'none'
+
+        var data = await response.json()
+        console.log(data)
+        for (var e of data) {
+          if (!fork && e.fork) continue;
+          last_created = new Date(e.created_at)
+          if (+last_created < +after) break;
+
+          var li = $result.appendChild(document.createElement('li'))
+          if (e.fork) {
+            var tag = li.appendChild(document.createElement('span'))
+            tag.className = 'tag'
+            tag.textContent = 'fork'
+          }
+          var a = li.appendChild(document.createElement('a'))
+          a.href = e.html_url
+          a.textContent = e.full_name
+          var time = li.appendChild(document.createElement('time'))
+          time.textContent = e.created_at.slice(0, 10)
+          time.datetime = e.created_at
+          var p = li.appendChild(document.createElement('p'))
+          p.textContent = e.description
+        }
+      } while (last_created > after)
+
+      var count = $result.querySelectorAll('li:not(.err)').length
+      $count.textContent = count + ' ' + (count == 1 ? 'repo' : 'repos')
+    }
+
+    function err(message, append = false) {
+      if (append) {
+        var li = $result.appendChild(document.createElement('li'))
+        li.textContent = message
+        li.className = 'err'
+      } else {
+        $result.textContent = message
+      }
+      $result.style.display = ''
+    }
+  </script>
+</body>
+</html>
