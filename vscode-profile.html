@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>VS Code Profile Reader</title>
+  <style>
+    #gist_fetch {
+      display: none;
+    }
+    #gist:not(:placeholder-shown) + #gist_fetch {
+      display: inline-block;
+    }
+    pre {
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+<h1 class="title">VS Code Profile Reader</h1>
+  <section>
+    <div id="home">
+      <button id="upload">Upload</button>
+      or
+      <input id="gist" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Fetch from gist url">
+      <button id="gist_fetch">Fetch</button>
+    </div>
+  </section>
+
+  <section id="result"></section>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css" media="(prefers-color-scheme: light)">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
+
+  <script type="module">
+    let h = (t = 'div') => document.createElement(t)
+    let $ = (e) => document.querySelector(e)
+
+    $('#upload').onclick = async function upload() {
+      let file = await new Promise(resolve => {
+        let i = h('input')
+        i.type = 'file'
+        i.click()
+        i.oninput = () => resolve(i.files[0])
+      })
+      if (file) {
+        let text = await new Promise(resolve => {
+          let r = new FileReader()
+          r.onload = () => resolve(r.result)
+          r.readAsText(file)
+        })
+        onData(text)
+      }
+    }
+
+    $('#gist_fetch').onclick = async function fetchGist() {
+      let m = $('#gist').value.match(/[0-9a-f]{32}/i)
+      if (m) {
+        let id = $('#gist').value = m[0]
+        let resp = await fetch(`https://api.github.com/gists/${id}`).then(r => r.json())
+        if (resp.files) {
+          let file = Object.values(resp.files)[0]
+          onData(file.content)
+        }
+      }
+    }
+
+    function onData(raw) {
+      sessionStorage.setItem('data', raw)
+      let data = JSON.parse(raw)
+      console.log(data)
+
+      let dom = $('#result')
+      dom.textContent = ''
+      dom.appendChild(h('h2')).textContent = data.name
+
+      let section = (title, content) => {
+        dom.appendChild(h('h3')).textContent = title
+        if (content) dom.appendChild(h('pre')).appendChild(h('code')).textContent = content
+      }
+
+      let snippets = (map) => {
+        for (let filename in map) {
+          dom.appendChild(h('h4')).textContent = filename
+          dom.appendChild(h('pre')).appendChild(h('code')).textContent = map[filename]
+        }
+      }
+
+      let extensions = (array) => {
+        let list = dom.appendChild(h('ul'))
+        for (let {identifier, displayName} of array) {
+          let li = list.appendChild(h('li'))
+          li.title = identifier.id
+          li.textContent = displayName
+        }
+      }
+
+      section('Settings', JSON.parse(data.settings).settings)
+      section('Key Bindings', JSON.parse(data.keybindings).keybindings)
+      section('Snippets'); snippets(JSON.parse(data.snippets).snippets)
+      section('Extensions'); extensions(JSON.parse(data.extensions))
+
+      console.log('Global State', JSON.parse(data.globalState))
+
+      hljs.highlightAll()
+    }
+
+    let raw = sessionStorage.getItem('data')
+    if (raw) onData(raw);
+  </script>
+</body>
+</html>
