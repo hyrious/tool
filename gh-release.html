@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>Watch Pull Requests</title>
+  <meta name="viewport" content="width=device-width">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <style>
+    .grid {
+      font: 1rem/1.1 monospace;
+      display: grid;
+      grid-template-columns: min-content auto;
+      gap: 8px;
+    }
+    input:invalid {
+      border-color: red;
+      background-color: var(--control);
+    }
+    li {
+      line-height: 2;
+    }
+    .loading {
+      opacity: .6;
+    }
+  </style>
+  <script src="theme.js"></script>
+</head>
+<body>
+  <h1 class="title">Watch Pull Requests</h1>
+  <section id="$form" class="grid">
+    <label for="$repos">Repositories</label>
+    <input id="$repos" autocomplete="off" spellcheck="false" placeholder="owner/repo, owner2/repo2" required pattern="([\-.\w]+\/[\-.\w]+)([,\s]+([\-.\w]+\/[\-.\w]+))*">
+    <label for="$interval">Refresh&nbsp;interval</label>
+    <div>
+      <input id="$interval" type="number" placeholder="30000">
+      <span>(ms)</span>
+    </div>
+    <label for="$token">
+      <a href="https://github.com/settings/tokens" tabindex="-1" target="_blank" rel="noreferrer">Token</a>
+    </label>
+    <div>
+      <input id="$token" type="password" autocomplete="off" spellcheck="false" style="width: 42ch">
+      <span>(Optional)</span>
+    </div>
+    <label for="$filter">Filter</label>
+    <input id="$filter" autocomplete="off" spellcheck="false">
+    <div style="grid-column: span 2;">
+      <button id="$refresh" disabled>Refresh</button>
+      <button id="$pause" disabled>Pause</button>
+      <span id="$limit">60/60</span><span id="$status"></span>
+    </div>
+  </section>
+  <section>
+    <ul id="$output"></ul>
+  </section>
+  <script type="module">
+    await import('https://cdn.jsdelivr.net/npm/@github/relative-time-element')
+
+    function status(text, ...children) {
+      $status.textContent = text ? '; ' + text : ''
+      if (children.length) {
+        $status.append(...children)
+      }
+    }
+
+    const api = repo => fetch(`https://api.github.com/repos/${repo}/pulls`, {
+      headers: {
+        'accept': 'application/vnd.github+json',
+        'authorization': $token.value ? `Bearer ${$token.value}` : null,
+      }
+    }).then(r => {
+      const remaining = r.headers.get('x-ratelimit-remaining')
+      const total = r.headers.get('x-ratelimit-limit')
+      const reset = r.headers.get('x-ratelimit-reset')
+      $limit.textContent = `${remaining}/${total}, reset `
+      $limit.appendChild(time(new Date(+reset * 1000).toISOString()))
+      return r.json()
+    })
+
+    let abort = new AbortController(), data = {}
+    async function main() {
+      if (!$repos.checkValidity()) return;
+      $output.classList.add('loading')
+      status('Loading...')
+      const repos = $repos.value.split(/[,\s]+/g)
+      data = globalThis.$pulls = {}
+      for (const repo of repos) {
+        data[repo] = api(repo)
+      }
+      for (const repo of repos) {
+        data[repo] = await data[repo]
+      }
+      console.log('$pulls =', data)
+      render(data)
+      let now = +new Date(), next = now + ($interval.valueAsNumber || 30_000) + 2000
+      status('next refresh ', time(new Date(next).toISOString()))
+      $output.classList.remove('loading')
+    }
+
+    function c(tag) {
+      return document.createElement(tag)
+    }
+
+    function time(datetime) {
+      const t = c('relative-time')
+      t.setAttribute('datetime', datetime)
+      return t
+    }
+
+    function link(text, url) {
+      const a = c('a')
+      a.textContent = text
+      a.href = url
+      a.target = '_blank'
+      return a
+    }
+
+    function text(content) {
+      return document.createTextNode(content)
+    }
+
+    function render(data = globalThis.$pulls) {
+      const filter = $filter.value
+      $output.textContent = ''
+      for (const repo in data) {
+        $output.appendChild(c('h2')).textContent = repo
+        const items = data[repo];
+        for (const item of items) {
+          if (filter && !match(item, filter)) {
+            continue
+          }
+          const $li = $output.appendChild(c('li'))
+          $li.appendChild(link('@' + item.user.login, `https://github.com/${item.user.login}`))
+          $li.appendChild(text(' wants to merge '))
+          $li.appendChild(link(item.title, item.html_url))
+          $li.appendChild(text(' '))
+          $li.appendChild(c('relative-time')).setAttribute('datetime', item.updated_at)
+          $li.appendChild(text(' '))
+          $li.appendChild(link('[diff]', item.diff_url))
+        }
+      }
+    }
+
+    function match(item, filter) {
+      return item.user.login.includes(filter) || item.title.includes(filter)
+    }
+
+    $filter.oninput = function refresh() {
+      render()
+    }
+
+    $repos.oninput = function update_buttons() {
+      $refresh.disabled = !this.checkValidity()
+    }
+
+    let t = 0
+    function cancel() {
+      clearTimeout(t)
+      abort.abort()
+      status('')
+    }
+
+    $refresh.onclick = async function run() {
+      $pause.disabled = false
+      cancel()
+      await main().catch(console.error)
+      t = setTimeout(run, $interval.valueAsNumber || 30_000)
+    }
+
+    $pause.onclick = function stop() {
+      this.disabled = true
+      $refresh.disabled = !$repos.checkValidity()
+      cancel()
+    }
+
+    $form.oninput = function refresh_location() {
+      let replacement = ''
+      if ($repos.value)    replacement += '&q=' + $repos.value.replace(/[,\s]+/g, ',');
+      if ($interval.value) replacement += '&i=' + $interval.value;
+      if ($filter.value)   replacement += '&f=' + $filter.value;
+      history.replaceState({ q: $repos.value }, '', replacement ? replacement.replace('&', '?') : location.pathname)
+    }
+
+    {
+      let search = new URLSearchParams(location.search)
+      let q = search.get('q')
+      let i = search.get('i')
+      if (i) $interval.value = i;
+      if (q) {
+        $repos.value = q.replace(/[,\s]+/g, ', ')
+        $repos.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      }
+    }
+
+  </script>
+</body>
+</html>
