@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Diff</title>
+  <style>
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+    textarea {
+      padding: 4px 5px;
+      font: 1rem/1.2 monospace;
+      resize: none;
+      max-height: 200vh;
+      field-sizing: content;
+    }
+    ins {
+      background: green;
+    }
+    del {
+      background: red;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Diff</h1>
+
+  <section class="content">
+    <div class="grid">
+      <textarea id="$old" autocomplete="off" spellcheck="false" rows="5"></textarea>
+      <textarea id="$new" autocomplete="off" spellcheck="false" rows="5"></textarea>
+    </div>
+    <pre class="result" id="$result">+Type
+ something
+-to see the diff</pre>
+  </section>
+
+  <script type="module">
+    import loadWasm from './diff.mbt.js'
+    const { diff } = await loadWasm()
+
+    $old.oninput = $new.oninput = function update() {
+      sessionStorage.setItem('diff-inputs', JSON.stringify([$old.value, $new.value]))
+      if ($old.value || $new.value) {
+        let raw = diff($old.value, $new.value)
+        let data = parse(raw)
+        render(data)
+      } else {
+        clear()
+      }
+    }
+
+    // 0 = equal, 1 = insert, 2 = delete
+    // 0 old_line_num new_line_num
+    // 1 new_line_num
+    // 2 old_line_num
+    // => [[0, 1, 1], [1, 2], [2, 3]]
+    function parse(raw) {
+      return raw.trimEnd().split('\n').map(line => line.split(' ').map(n => Number.parseInt(n)))
+    }
+
+    function escape(html) {
+      return html.replace(/&/g, '&amp;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function render(diff) {
+      const [prev, next] = [$old.value, $new.value].map(e => e.trimEnd().split('\n'))
+      prev.unshift('') // Make line numbers happy
+      next.unshift('')
+      const html = []
+      for (const [e, l] of diff) switch (e) {
+        case 0: html.push(escape(' ' + (prev[l] || ''))); break
+        case 1: html.push('<ins>' + escape('+' + (next[l] || '')) + '</ins>'); break
+        case 2: html.push('<del>' + escape('-' + (prev[l] || '')) + '</del>'); break
+      }
+      $result.innerHTML = html.join('\n')
+    }
+
+    function clear() {
+      $result.innerText = ''
+    }
+
+    try {
+      const [a, b] = JSON.parse(sessionStorage.getItem('diff-inputs'))
+      $old.value = a
+      $new.value = b
+      $old.dispatchEvent(new InputEvent('input'))
+    } catch {
+      $old.value = 'ABCABC'.split('').join('\n')
+      $new.value = 'CBABAC'.split('').join('\n')
+      $old.dispatchEvent(new InputEvent('input'))
+    }
+  </script>
+</body>
+</html>

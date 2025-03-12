@@ -1,0 +1,8 @@
+build:
+  rm -rf target
+  moon build
+  esbuild src/mod.ts --bundle --format=esm --loader:.wasm=binary --outfile=../diff.mbt.js
+
+schema:
+  rm pkg.schema.json
+  wget https://raw.gitmirror.com/moonbitlang/moon/refs/heads/main/crates/moonbuild/template/pkg.schema.json

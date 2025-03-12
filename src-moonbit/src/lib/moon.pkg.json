@@ -1,0 +1,9 @@
+{
+  "$schema": "../../pkg.schema.json",
+  "link": {
+    "wasm-gc": {
+      "exports": ["diff"],
+      "use-js-builtin-string": true
+    }
+  }
+}
