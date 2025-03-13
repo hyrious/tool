@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>File Size</title>
+  <style>
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: .5em;
+      line-height: 24px;
+    }
+    label {
+      display: flex;
+      align-items: center;
+      gap: .5em;
+    }
+    input {
+      flex: 1;
+      font-family: monospace;
+      font-size: 1rem;
+    }
+    output {
+      font-size: .8em;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">File Size</h1>
+
+  <section class="content">
+    <label>
+      Upload a file:
+      <input id="$file" type="file">
+    </label>
+    <label>
+      Result:
+      <output><samp id="$output">Waiting for input.</samp></output>
+    </label>
+  </section>
+
+  <script>
+    $file.oninput = function update() {
+      var file = this.files[0]
+      if (file) {
+        try { var fmt = new Intl.NumberFormat } catch {}
+        $output.innerText = (fmt ? fmt.format(file.size) : size) + ' bytes'
+      } else {
+        $output.innerText = 'Waiting for input.'
+      }
+    }
+  </script>
+</body>
+</html>
