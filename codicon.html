@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Codicons</title>
+  <style>
+    /* === from VS Code: https://github.com/microsoft/vscode/blob/main/src/vs/base/browser/ui/codicons/codicon/codicon.css === */
+
+    @font-face {
+      font-family: "codicon";
+      font-display: block;
+      src: url("https://cdn.jsdelivr.net/gh/microsoft/vscode@main/src/vs/base/browser/ui/codicons/codicon/codicon.ttf");
+    }
+
+    .codicon[class*='codicon-'] {
+      font: normal normal normal 16px/1 codicon;
+      display: inline-block;
+      text-decoration: none;
+      text-rendering: auto;
+      text-align: center;
+      text-transform: none;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .codicon-wrench-subaction {
+      opacity: 0.5;
+    }
+
+    @keyframes codicon-spin {
+      100% {
+        transform:rotate(360deg);
+      }
+    }
+
+    .codicon-sync.codicon-modifier-spin,
+    .codicon-loading.codicon-modifier-spin,
+    .codicon-gear.codicon-modifier-spin,
+    .codicon-notebook-state-executing.codicon-modifier-spin {
+      animation: codicon-spin 1.5s steps(30) infinite;
+    }
+
+    .codicon-modifier-disabled {
+      opacity: 0.4;
+    }
+
+    .codicon-loading,
+    .codicon-tree-item-loading::before {
+      animation-duration: 1s !important;
+      animation-timing-function: cubic-bezier(0.53, 0.21, 0.29, 0.67) !important;
+    }
+
+    /* ================== */
+
+    input, select, option, output {
+      font-family: monospace;
+      font-size: 1rem;
+    }
+
+    output:not(:empty)::before {
+      content: "Also known as ";
+      opacity: .5;
+    }
+
+    .display {
+      margin: 10px 5px;
+      display: flex;
+      flex-flow: row wrap;
+      gap: 5px;
+    }
+
+    .display > .icon {
+      opacity: .5;
+    }
+
+    .icon { display: flex; flex-flow: column nowrap; align-items: center; }
+    .icon > .codicon { font-size: 32px }
+    .name { font-size: 1rem; }
+    .unicode { font-family: monospace; font-size: 1rem; }
+
+    .icon { border: 1px solid transparent; padding: 0.5em; cursor: pointer; }
+    .icon:hover { border-color: WindowFrame; }
+    .icon:active { opacity: .4 !important }
+
+    .alias { border: none; background: none; padding: 0; text-decoration: underline; cursor: pointer; }
+
+    /* Reduce motion */
+    *, ::before, ::after {
+      animation-delay: -1ms !important;
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      background-attachment: initial !important;
+      scroll-behavior: auto !important;
+      transition-delay: 0s !important;
+      transition-duration: 0s !important;
+    }
+  </style>
+</head>
+<body>
+  <h1 class="title">Codicons</h1>
+
+  <section>
+    <label for="$search">Search:</label>
+    <input id="$search" list="$search_result" type="search" placeholder="file"
+           autocomplete="off" spellcheck="false" autofocus>
+    <datalist id="$search_result"></datalist>
+    <output id="$aliases"></output>
+
+    <div id="$icons" class="display"></div>
+  </section>
+
+  <script type="module">
+    const icons = { __proto__: null }
+
+    Promise.all([
+      fetch('https://cdn.jsdelivr.net/gh/microsoft/vscode@main/src/vs/base/common/codiconsLibrary.ts').then(r => r.text()),
+      fetch('https://cdn.jsdelivr.net/gh/microsoft/vscode@main/src/vs/base/common/codicons.ts').then(r => r.text())
+    ]).then((codes) => {
+      const aliases = []
+
+      let code = codes.join('\n')
+      let re = /^\t(\w+): register\('([^']+)', ([^\)]+)\)/gm
+      let match
+
+      while (match = re.exec(code)) {
+        let [_, camel, slash, definition] = match
+        if (definition[0] == "'") {
+          aliases.push([slash, definition.slice(1, -1)])
+        } else {
+          icons[slash] = +definition
+        }
+      }
+      for (let [alias, origin] of aliases) {
+        icons[alias] = icons[origin]
+      }
+      aliases.length = 0
+
+      $search_result.innerHTML = Object.keys(icons)
+        .map(icon => `<option value="${icon}">${icon}</option>`)
+        .join('')
+
+      let css = []
+      for (let name in icons) {
+        css.push(`.codicon-${name}:before { content: '\\${icons[name].toString(16)}'; }`)
+      }
+      let style = document.createElement('style')
+      style.textContent = css.join('\n')
+      css.length = 0
+      document.head.appendChild(style)
+
+      let search = new URL(location.href).searchParams
+      let q = search.get('q')
+      if (q) doSearch(q);
+    })
+
+    function doSearch(text) {
+      $search.value = text
+      $search.dispatchEvent(new InputEvent('input', { bubbles: true }))
+      $search.dispatchEvent(new InputEvent('change', { bubbles: true }))
+    }
+
+    $search.onchange = function update() {
+      $aliases.textContent = ''
+
+      let input = this.value.trim()
+      let unicode = icons[input]
+      if (unicode) {
+        let aliases = []
+        for (let name in icons) {
+          if (input != name && icons[name] == unicode) {
+            aliases.push(name)
+          }
+        }
+        $aliases.innerHTML = aliases
+          .map(a => `<button class="alias">${a}</button>`)
+          .join(', ')
+      }
+    }
+
+    let exactStyle = null
+    $search.oninput = function update() {
+      let text = this.value.trim()
+      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+
+      let exact = null, matches = []
+      for (let name in icons) {
+        if (name == text) {
+          exact = name
+        } else if (name.includes(text)) {
+          matches.push(name)
+        }
+      }
+      if (exact) matches.unshift(exact);
+
+      $icons.innerHTML = matches
+        .map(t => `<button class="icon" data-icon="${t}" data-unicode="${icons[t].toString(16)}">
+                    <div class="codicon codicon-${t}" title="${t}"></div>
+                    <div class="name">${t}</div>
+                    <div class="unicode">0x${icons[t].toString(16).toUpperCase()}</div>
+                  </button>`)
+        .join('')
+
+      if (exact) {
+        if (!exactStyle) {
+          exactStyle = document.createElement('style')
+        }
+        exactStyle.textContent = `[data-unicode="${icons[exact].toString(16)}"] { opacity: 1 !important }`
+        document.head.appendChild(exactStyle)
+      } else if (exactStyle && exactStyle.parentElement) {
+        document.head.removeChild(exactStyle)
+      }
+    }
+
+    $icons.onclick = function click(ev) {
+      let icon = ev.target?.closest?.('[data-icon]')?.dataset?.icon
+      if (!icon) return;
+      if ($search.value.trim() === icon) {
+        navigator.clipboard.writeText(`i-codicon:${icon}`)
+      } else {
+        doSearch(icon)
+      }
+    }
+
+    $aliases.onclick = function click(ev) {
+      let icon = ev.target?.textContent
+      if (icon && icons[icon]) doSearch(icon);
+    }
+  </script>
+</body>
+</html>
