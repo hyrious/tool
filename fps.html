@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>FPS Meter</title>
+  <style>
+    .content { flex: 1; text-align: center; align-content: center; font-size: 15vw }
+  </style>
+</head>
+<body>
+  <section id="$fps" class="content">
+    &hellip;
+  </section>
+  <script>
+    let frameCount = 0;
+    let startTime = performance.now();
+
+    function estimateRefreshRate(currentTime) {
+      requestAnimationFrame(estimateRefreshRate);
+
+      frameCount++;
+      let elapsedTime = currentTime - startTime;
+      if (elapsedTime >= 1000) {
+        let rate = frameCount * 1000 / elapsedTime;
+        $fps.textContent = `${rate | 0} Hz`;
+      }
+    }
+
+    requestAnimationFrame(estimateRefreshRate);
+  </script>
+</body>
+</html>
