@@ -18,19 +18,31 @@
   <script>
     let frameCount = 0;
     let startTime = performance.now();
+    let text = '';
+    let raf = 0;
 
     function estimateRefreshRate(currentTime) {
-      requestAnimationFrame(estimateRefreshRate);
+      raf = requestAnimationFrame(estimateRefreshRate);
 
       frameCount++;
       let elapsedTime = currentTime - startTime;
       if (elapsedTime >= 1000) {
         let rate = frameCount * 1000 / elapsedTime;
-        $fps.textContent = `${rate | 0} Hz`;
+        let next = `${Math.round(rate)} Hz`;
+        if (text != next) {
+          $fps.textContent = text = next;
+        }
       }
     }
 
-    requestAnimationFrame(estimateRefreshRate);
+    raf = requestAnimationFrame(estimateRefreshRate);
+
+    document.addEventListener('visibilitychange', function restart() {
+      frameCount = 0;
+      startTime = performance.now();
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(estimateRefreshRate);
+    });
   </script>
 </body>
 </html>
