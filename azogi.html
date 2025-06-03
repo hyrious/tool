@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Azogi</title>
+  <style>
+    textarea {
+      padding: 4px 5px;
+      font: 1rem/1.2 monospace;
+      resize: none;
+      max-height: 200vh;
+      field-sizing: content;
+    }
+    .content {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-gap: 8px;
+      align-items: center;
+      font-family: monospace;
+      font-size: 18px;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="$title" class="title">Azogi</h1>
+  <section class="content">
+    <label for="$template">Template</label>
+    <input id="$template" spellcheck="false" autofocus="true" value="Azogi">
+    <label for="$times">N</label>
+    <input id="$times" type="number" min="1" max="65536" step="1" value="1">
+    <label for="$regenerate">Run</label>
+    <button id="$regenerate">Regenerate</button>
+    <label for="$output">Result</label>
+    <textarea id="$output" rows="1"></textarea>
+  </section>
+
+  <script type="module">
+    function azogi(template = 'Azogi') {
+      const aeiou = 'aeiou', other = 'bcdfghjklmnpqrstvwxyz'
+      return template.replace(/./g, char => {
+        if (/[a-z]/i.test(char)) {
+          const upper = char.toUpperCase() == char
+          const where = aeiou.includes(char.toLowerCase()) ? aeiou : other
+          const ret = where[(Math.random() * where.length) | 0]
+          return upper ? ret.toUpperCase() : ret
+        } else {
+          return char
+        }
+      })
+    }
+
+    function regenerate() {
+      $output.value = Array.from({ length: $times.valueAsNumber }, azogi.bind(null, $template.value.trim())).join(', ')
+    }
+
+    function updateHistory() {
+      let text = $template.value.trim()
+      let n = $times.value.trim()
+      let query = ''
+      if (text != 'Azogi') {
+        query += '&q=' + text
+      }
+      if (n > 1) {
+        query += '&n=' + n
+      }
+      if (query) {
+        query = '?' + query.slice(1)
+      }
+      history.replaceState({ q: query }, "", query || location.pathname)
+    }
+
+    void function titleAnim() {
+      const ch = () => 'abcdefghijklmnopqrstuvwxyz'[(Math.random() * 26) | 0]
+
+    }()
+
+    $template.oninput = function update() {
+      updateHistory()
+      regenerate()
+    }
+
+    $times.oninput = function update() {
+      updateHistory()
+      regenerate()
+    }
+
+    $regenerate.onclick = regenerate;
+
+    let search = new URL(location.href).searchParams
+    if (search.has('q')) {
+      $template.value = search.get('q')
+    }
+    if (search.has('n')) {
+      $times.value = search.get('n')
+    }
+
+    regenerate();
+  </script>
+</body>
+</html>
