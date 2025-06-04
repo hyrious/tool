@@ -39,11 +39,9 @@
       }
     }
 
-    .codicon-sync.codicon-modifier-spin,
-    .codicon-loading.codicon-modifier-spin,
-    .codicon-gear.codicon-modifier-spin,
-    .codicon-notebook-state-executing.codicon-modifier-spin {
+    .codicon-modifier-spin {
       animation: codicon-spin 1.5s steps(30) infinite;
+      font-style: normal !important;
     }
 
     .codicon-modifier-disabled {
@@ -51,7 +49,7 @@
     }
 
     .codicon-loading,
-    .codicon-tree-item-loading::before {
+    .codicon-tree-item-loading {
       animation-duration: 1s !important;
       animation-timing-function: cubic-bezier(0.53, 0.21, 0.29, 0.67) !important;
     }
@@ -89,17 +87,6 @@
     .icon:active { opacity: .4 !important }
 
     .alias { border: none; background: none; padding: 0; text-decoration: underline; cursor: pointer; }
-
-    /* Reduce motion */
-    *, ::before, ::after {
-      animation-delay: -1ms !important;
-      animation-duration: 1ms !important;
-      animation-iteration-count: 1 !important;
-      background-attachment: initial !important;
-      scroll-behavior: auto !important;
-      transition-delay: 0s !important;
-      transition-duration: 0s !important;
-    }
   </style>
 </head>
 <body>
@@ -107,7 +94,7 @@
 
   <section>
     <label for="$search">Search:</label>
-    <input id="$search" list="$search_result" type="search" placeholder="file"
+    <input id="$search" list="$search_result" type="search" placeholder="loading~spin"
            autocomplete="off" spellcheck="false" autofocus>
     <datalist id="$search_result"></datalist>
     <output id="$aliases"></output>
@@ -187,6 +174,11 @@
     $search.oninput = function update() {
       let text = this.value.trim()
       history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      let i = text.indexOf('~'), modifier = ''
+      if (i >= 0) {
+        modifier = ` codicon-modifier-${text.slice(i + 1)}`
+        text = text.slice(0, i)
+      }
 
       let exact = null, matches = []
       for (let name in icons) {
@@ -200,7 +192,7 @@
 
       $icons.innerHTML = matches
         .map(t => `<button class="icon" data-icon="${t}" data-unicode="${icons[t].toString(16)}">
-                    <div class="codicon codicon-${t}" title="${t}"></div>
+                    <div class="codicon codicon-${t}${modifier}" title="${t}"></div>
                     <div class="name">${t}</div>
                     <div class="unicode">0x${icons[t].toString(16).toUpperCase()}</div>
                   </button>`)
