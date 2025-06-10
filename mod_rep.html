@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>Module Replacements</title>
+  <style>
+    ul {
+      overflow: hidden;
+      list-style-type: none;
+      margin: 1em 0 50px;
+      padding: 0;
+      display: grid;
+      grid-template-columns: max-content 1fr
+    }
+    li {
+      overflow: hidden;
+      grid-column: span 2;
+      display: grid;
+      grid-template-columns: subgrid;
+      padding: 5px 8px;
+      background-color: rgba(127, 127, 127, 0.2);
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    @media (max-width: 768px) {
+      li {
+        grid-template-columns: 1fr;
+      }
+    }
+    li:hover {
+      background-color: rgba(127, 127, 127, 0.5);
+    }
+    .moduleName {
+      font: 1rem/1.2 monospace;
+      padding-right: 1em;
+    }
+    .simpleReplacement, .docPath, .nativeReplacement {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    .doc {
+      position: fixed;
+      inset: 0;
+      padding: 50px 10vw;
+      background-color: color-mix(in srgb, var(--back) 90%, transparent);
+      overflow-y: auto;
+    }
+    .docClose {
+      position: fixed;
+      inset: 25px 25px auto auto;
+      width: 42px;
+      height: 42px;
+      margin: 0;
+      padding: 9px;
+      background: transparent;
+      border: none;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .docClose:hover {
+      background-color: rgba(127, 127, 127, 0.35);
+    }
+    .docClose:active {
+      background-color: rgba(127, 127, 127, 0.5);
+    }
+    html:has(.doc.open) body {
+      overflow: hidden;
+    }
+    [data-filtering="true"] [data-match="false"] {
+      display: none;
+    }
+    .doc .markdown-body {
+      background-color: transparent;
+    }
+  </style>
+  <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/hyrious/github-markdown-css@main/github-markdown.css">
+</head>
+<body>
+  <h1 class="title">Module Replacements</h1>
+
+  <section class="content">
+    <label>
+      <span>Filter:</span>
+      <input id="$filter" autocomplete="off" spellcheck="false" autofocus>
+    </label><br>
+    <ul id="$list"></ul>
+  </section>
+
+  <article id="$doc" class="doc" style="display: none;">
+    <div id="$docContent" class="markdown-body"></div>
+    <button id="$docClose" class="docClose">
+      <svg width="32" height="32" viewBox="0 0 32 32"><path fill="currentColor" d="M17.414 16L26 7.414L24.586 6L16 14.586L7.414 6L6 7.414L14.586 16L6 24.586L7.414 26L16 17.414L24.586 26L26 24.586z"/></svg>
+    </button>
+  </article>
+
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script type="module">
+    Promise.all([
+      import('https://esm.sh/module-replacements/manifests/micro-utilities.json', { with: { type: 'json' } }),
+      import('https://esm.sh/module-replacements/manifests/native.json', { with: { type: 'json' } }),
+      import('https://esm.sh/module-replacements/manifests/preferred.json', { with: { type: 'json' } }),
+    ]).then(mods => {
+
+      // Simple:
+      //    type: "simple"
+      //    category: "micro-utilities"
+      //    moduleName: "call-bind"
+      //    replacement: "Use Function.call.bind(v)"
+
+      // Native:
+      //    type: "native"
+      //    category: "native"
+      //    moduleName: "number.isfinite"
+      //    replacement: "Number.isFinite"
+      //    nodeVersion: "0.10.0"
+      //    mdnPath: "Global_Objects/Number/isFinite"
+
+      // Documented:
+      //    type: "documented"
+      //    category: "preferred"
+      //    moduleName: "lodash.words"
+      //    docPath: "lodash-underscore"
+
+      const moduleReplacements = mods.flatMap(mod => mod.default.moduleReplacements)
+      for (const replacement of moduleReplacements) {
+        $list.appendChild(renderReplacement(replacement))
+      }
+
+      $filter.oninput = function update() {
+        let text = this.value.trim()
+        history.replaceState({ q: text }, '', text ? '?q=' + text : location.pathname)
+        doSearch(text)
+      }
+
+      function doSearch(text) {
+        $list.dataset.filtering = !!text
+        Array.prototype.forEach.call($list.children, $li => {
+          $li.dataset.match = $li.textContent.includes(text)
+        })
+      }
+
+      let search = new URL(location.href).searchParams
+      if (search.has('q')) {
+        $filter.value = search.get('q')
+        doSearch($filter.value)
+      }
+    })
+
+    function renderReplacement({ type, moduleName, category, ...args }) {
+      const $item = document.createElement('li')
+      Object.assign($item.dataset, { type, moduleName, category })
+
+      const $moduleName = $item.appendChild(document.createElement('span'))
+      $moduleName.className = 'moduleName'
+      $moduleName.textContent = moduleName
+
+      let $content;
+
+      switch (type) {
+      case 'simple':
+        $content = $item.appendChild(document.createElement('span'))
+        $content.className = 'simpleReplacement'
+        $content.textContent = args.replacement
+        $content.title = args.replacement
+        break
+      case 'documented':
+        $content = $item.appendChild(document.createElement('a'))
+        $content.className = 'docPath'
+        $content.textContent = `doc: ${args.docPath}`
+        $content.href = `https://github.com/es-tooling/module-replacements/blob/main/docs/modules/${args.docPath}.md`
+        $content.onclick = renderGitHubMarkdown
+        break
+      case 'native':
+        $content = $item.appendChild(document.createElement('a'))
+        $content.className = 'nativeReplacement'
+        $content.textContent = `native: ${args.replacement}`
+        $content.title = args.replacement
+        $content.dataset.nodeVersion = args.nodeVersion
+        $content.href = `https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/${args.mdnPath}`
+        $content.target = '_blank'
+        break
+      }
+
+      return $item
+    }
+
+    let cache = {}
+    async function renderGitHubMarkdown(e) {
+      e.preventDefault()
+      let url = e.currentTarget.href
+      url = url.replace('https://github.com/', '').replace('/blob/main', '@main')
+      url = `https://cdn.jsdelivr.net/gh/${url}`
+      cache[url] ||= fetch(url).then(r => r.text())
+      openMarkdown('# Loading...')
+      let md = await cache[url]
+      openMarkdown(md)
+    }
+
+    function openMarkdown(md) {
+      $docContent.innerHTML = marked.parse(md)
+      $docContent.querySelectorAll('a').forEach(a => a.target = '_blank')
+      $doc.style.display = ''
+      $doc.classList.add('open')
+    }
+
+    function closeMarkdown() {
+      $doc.style.display = 'none'
+      $doc.classList.remove('open')
+    }
+
+    $docClose.onclick = closeMarkdown
+  </script>
+</body>
+</html>
