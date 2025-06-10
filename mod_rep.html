@@ -90,7 +90,20 @@
     <label>
       <span>Filter:</span>
       <input id="$filter" autocomplete="off" spellcheck="false" autofocus>
-    </label><br>
+    </label>
+    <label>
+      <input id="$checkSimple" type="checkbox" checked>
+      <span>simple</span>
+    </label>
+    <label>
+      <input id="$checkNative" type="checkbox" checked>
+      <span>native</span>
+    </label>
+    <label>
+      <input id="$checkDocumented" type="checkbox" checked>
+      <span>documented</span>
+    </label>
+    <br>
     <ul id="$list"></ul>
   </section>
 
@@ -140,10 +153,19 @@
         doSearch(text)
       }
 
+      $checkSimple.onchange = $checkNative.onchange = $checkDocumented.onchange = function update() {
+        doSearch($filter.value.trim())
+      }
+
       function doSearch(text) {
-        $list.dataset.filtering = !!text
+        let types = {
+          simple: $checkSimple.checked,
+          native: $checkNative.checked,
+          documented: $checkDocumented.checked,
+        }
+        $list.dataset.filtering = !!text || !types.simple || !types.native || !types.documented
         Array.prototype.forEach.call($list.children, $li => {
-          $li.dataset.match = $li.textContent.includes(text)
+          $li.dataset.match = types[$li.dataset.type] && $li.textContent.includes(text)
         })
       }
 
