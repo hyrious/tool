@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="style.css">
+  <script src="favicon.js"></script>
+  <script src="theme.js"></script>
+  <title>给透明图片加背景色</title>
+  <style>
+    body {
+      flex-direction: row;
+      gap: 10px;
+    }
+    .drop-info {
+      margin: 50px;
+      border: 2px dashed var(--control);
+      border-radius: 10px;
+      position: absolute;
+      inset: 0;
+      text-align: center;
+      align-content: center;
+    }
+    body:has(img) .drop-info {
+      display: none;
+    }
+    body:has(img) {
+      padding: 20px;
+    }
+    input {
+      border-bottom: 0;
+    }
+  </style>
+</head>
+<body>
+  <p id="$dropZone" class="drop-info">
+    <a id="$upload" href="javascript:void 0">Upload</a> or Drop
+  </p>
+
+  <script type="module">
+    document.body.ondragover = ev => {
+      ev.preventDefault()
+      ev.dataTransfer.dropEffect = 'copy'
+    }
+    document.body.ondrop = ev => {
+      ev.preventDefault()
+      oninput(ev.dataTransfer.files[0])
+    }
+    document.onpaste = ev => {
+      if (ev.clipboardData?.files) oninput(ev.clipboardData.files[0]);
+    }
+    $upload.onclick = (ev) => {
+      ev.preventDefault()
+      var input = document.body.appendChild(document.createElement('input'))
+      input.style.display = 'none'
+      input.type = 'file'
+      input.oninput = function (ev) { ev.preventDefault(); oninput(this.files[0]) }
+      input.click()
+      input.remove()
+    }
+    function oninput(file) {
+      if (!file) return;
+      if (file.type.startsWith('image/')) {
+        onimage(file)
+      } else {
+        alert('Not supported image')
+      }
+    }
+    var img
+    function onimage(file) {
+      if (!file) return;
+      var url = URL.createObjectURL(file, { type: file.type })
+      img?.remove()
+      img = document.createElement('img')
+      img.src = url
+      img.decode().then(done)
+                  .catch(err => alert(err + ''))
+    }
+    var color
+    function done() {
+      var w = img.width, h = img.height, r = w / h
+      if (window.innerWidth < w + 100) {
+        w = window.innerWidth - 100
+        h = w / r
+      }
+      if (window.innerHeight < h + 100) {
+        h = window.innerHeight - 100
+        w = h * r
+      }
+      img.style.width = w + 'px'
+      img.style.height = h + 'px'
+      document.body.appendChild(img)
+      color || createColorWidget()
+      document.body.appendChild(color)
+    }
+    function createColorWidget() {
+      color = document.createElement('input')
+      color.type = 'color'
+      color.value = '#ffffff'
+      img.style.background = color.value
+      color.oninput = ev => {
+        img.style.background = ev.target.value
+      }
+    }
+  </script>
+</body>
+</html>
