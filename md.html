@@ -33,6 +33,7 @@
         }
     </style>
     <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/gh/hyrious/github-markdown-css@main/github-markdown.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.css">
 </head>
 <body>
     <div id="app" v-cloak>
@@ -40,26 +41,39 @@
         <textarea v-model="result" readonly v-show="showSource"></textarea>
         <div v-show="!showSource" v-html="result" class="markdown-body" style="display: none;"></div>
         <aside>
-            <button @click="showSource = !showSource">switch</button>
-            <button @click="usePangu = !usePangu">pangu</button>
+            <button @click="showSource = !showSource">source{{ showSource ? '*' : '' }}</button>
+            <button @click="usePangu = !usePangu">pangu{{ usePangu ? '*' : '' }}</button>
         </aside>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/vue@latest/dist/vue.global.prod.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/remarkable@latest/dist/remarkable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pangu@latest/dist/browser/pangu.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@latest/dist/contrib/auto-render.min.js"></script>
     <script>
         const { Remarkable } = remarkable
-        const { createApp, ref, computed } = Vue
+        const { createApp, ref, computed, watch, watchEffect, nextTick } = Vue
         const md = new Remarkable()
         createApp({
             setup() {
-                let showSource = ref(true)
+                let showSource = ref(false)
                 let usePangu = ref(false)
-                let markdown = ref("# hello world!")
+                let markdown = ref(sessionStorage.getItem('md') ?? '# Hello, world!')
                 let result = computed(() => md.render(
-                    usePangu.value ? pangu.spacing(markdown.value)
+                    usePangu.value ? pangu.spacingText(markdown.value)
                                    : markdown.value
                 ))
+                watchEffect(() => sessionStorage.setItem('md', markdown.value))
+                watch(result, () => nextTick(() => {
+                    renderMathInElement(document.querySelector('.markdown-body'), {
+                        delimiters: [
+                            { left: "$$", right: "$$", display: true },
+                            { left: "$`", right: "`$", display: false },
+                            { left: "$", right: "$", display: false },
+                        ],
+                        throwOnError: false,
+                    });
+                }), { immediate: true })
                 return { showSource, usePangu, markdown, result }
             }
         }).mount('#app')
