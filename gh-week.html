@@ -97,6 +97,7 @@
             const TOKEN = $token.value
             const AFTER = $after.value
             const FILTER = $filter_me.checked
+            sessionStorage.setItem('github-token', TOKEN)
 
             $loading.style.display = ''
             let date = new Date().toISOString().slice(0, 10)
@@ -137,7 +138,7 @@
                     <strong class="type">PR</strong>
                     <a class="issue" href="https://github.com/${ev.repo.name}/pull/${number}">${ev.repo.name}#${number}</a>
                     <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
-                    <ul><li><span class="issue_title">${pull_request.title}</span></li></ul>
+                    ${pull_request.title ? `<ul><li><span class="issue_title">${pull_request.title}</span></li></ul>` : ''}
                 </li>`)
             },
             CreateEvent(ev) {
@@ -152,9 +153,9 @@
                     <span class="action">pushed</span>
                     <span>to <a href="https://github.com/${ev.repo.name}">${ev.repo.name}</a></span>
                     <time datetime="${ev.created_at}">at ${ev.created_at.slice(5).replace(/[TZ]/g, ' ')}</time>
-                    <ul class="commits">
+                    ${commits ? `<ul class="commits">
                         ${commits.map(e => `<li class="commit_title">${e.message}</li>`).join('')}
-                    </ul>
+                    </ul>` : ''}
                 </li>`)
             },
             WatchEvent(ev) {
@@ -213,7 +214,8 @@
         }
         async function fetch_events(username, token, page = 1) {
             const headers = {
-                Accept: "application/vnd.github+json"
+                'Accept': "application/vnd.github+json",
+                'X-GitHub-Api-Version': "2022-11-28"
             }
             if (token) {
                 headers.Authorization = "Bearer " + token
@@ -241,6 +243,10 @@
             let search = new URLSearchParams(location.search)
             let q = search.get('q')
             let i = search.get('i')
+            let t = sessionStorage.getItem('github-token')
+            if (t) {
+                $token.value = t
+            }
             if (i) {
                 $filter_me.checked = true
             }
