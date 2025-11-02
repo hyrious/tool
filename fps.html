@@ -8,38 +8,52 @@
   <script src="theme.js"></script>
   <title>FPS Meter</title>
   <style>
-    .content { flex: 1; text-align: center; align-content: center; font-size: 15vw }
+    .content {
+      flex: 1;
+      text-align: center;
+      align-content: center;
+      font-size: 5vw;
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
-  <section id="$fps" class="content">
-    &hellip;
+  <section class="content">
+    <div>Average: <span id="$average">&hellip;</span> Hz</div>
+    <div>Last second: <span id="$lastSecond">&hellip;</span> Hz</div>
+    <div>Last frame: <span id="$lastFrame">&hellip;</span> Hz</div>
   </section>
   <script>
-    let frameCount = 0;
+    let frameTimes = [];
+    let totalFrames = 0;
     let startTime = performance.now();
+    let lastTime = startTime;
     let text = '';
     let raf = 0;
 
     function estimateRefreshRate(currentTime) {
       raf = requestAnimationFrame(estimateRefreshRate);
 
-      frameCount++;
-      let elapsedTime = currentTime - startTime;
-      if (elapsedTime >= 1000) {
-        let rate = frameCount * 1000 / elapsedTime;
-        let next = `${Math.round(rate)} Hz`;
-        if (text != next) {
-          $fps.textContent = text = next;
-        }
+      totalFrames++;
+      let delta = currentTime - lastTime;
+      lastTime = currentTime;
+      frameTimes.push(currentTime);
+      while (frameTimes.length && currentTime - frameTimes[0] > 1000) {
+        frameTimes.shift();
       }
+
+      $average.textContent = (totalFrames * 1000 / (currentTime - startTime)).toFixed(3);
+      $lastSecond.textContent = ((frameTimes.length - 1) * 1000 / (currentTime - frameTimes[0])).toFixed(3);
+      $lastFrame.textContent = (1000 / delta).toFixed(3);
     }
 
     raf = requestAnimationFrame(estimateRefreshRate);
 
     document.addEventListener('visibilitychange', function restart() {
-      frameCount = 0;
+      frameTimes = [];
+      totalFrames = 0;
       startTime = performance.now();
+      lastTime = startTime;
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(estimateRefreshRate);
     });
