@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>antd 5 → 6</title>
+	<meta name="color-scheme" content="light dark">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@6.0.0/dist/reset.css">
+</head>
+<body>
+	<div id="v5" style="position: absolute; padding: 25px; inset: 0 0 auto auto;">
+		<a href="?v=5" onclick="open(this.href, 'popup', 'width=800,height=600,left=1000,top=100,resizable=yes,scrollbars=yes'); return false;">v5 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 32 32"><path fill="currentColor" d="M26 28H6a2.003 2.003 0 0 1-2-2V6a2.003 2.003 0 0 1 2-2h10v2H6v20h20V16h2v10a2.003 2.003 0 0 1-2 2"/><path fill="currentColor" d="M20 2v2h6.586L18 12.586L19.414 14L28 5.414V12h2V2z"/></svg></a>
+	</div>
+
+	<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+	<script type="module">
+		let version = '6.0.0'
+		let href = new URL(location.href)
+		if (href.searchParams.get('v') == 5) {
+			document.getElementById('v5').remove()
+			document.title = 'antd 5'
+			version = '5.29.1'
+		} else {
+			document.title = 'antd 6'
+		}
+
+		if (version[0] == 6) {
+			let link = document.createElement('link')
+			link.rel = 'stylesheet'
+			link.href = `https://cdn.jsdelivr.net/npm/antd@${version}/dist/antd.css`
+			document.head.appendChild(link)
+		}
+
+		function importScript(src, name = '') {
+			let script = document.createElement('script')
+			return new Promise(resolve => {
+				script.onload = () => resolve(name ? globalThis[name] : null)
+				script.src = src
+				document.head.appendChild(script)
+			})
+		}
+
+		if (version[0] == 6) {
+			// Antd v6 must use React 19 [https://github.com/ant-design/ant-design/issues/55889], and
+			// React 19 removes the UMD build, it now only has CJS build 🤷, so we must use esm.sh here.
+			Promise.all([
+				import('https://esm.sh/react'),
+				import('https://esm.sh/react-dom'),
+				import('https://esm.sh/react-dom/client'),
+			]).then(([React, ReactDOM, ReactDOMClient]) => {
+				globalThis.React = React
+				globalThis.ReactDOM = ReactDOM
+				globalThis.createRoot = ReactDOMClient.createRoot
+			})
+		} else {
+			importScript('https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js')
+			importScript('https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js')
+		}
+		importScript('https://cdn.jsdelivr.net/npm/dayjs@1.11.19/dayjs.min.js')
+
+		console.log('Loading deps...')
+		await new Promise((resolve, reject) => {
+			const token = setInterval(() => {
+				if (globalThis.React && globalThis.ReactDOM && globalThis.dayjs) {
+					if (ReactDOM.createRoot) {
+						globalThis.createRoot = ReactDOM.createRoot
+					}
+					clearInterval(token)
+					resolve()
+				}
+			}, 500)
+
+			setTimeout(() => {
+				clearInterval(token)
+				reject(new Error('Failed to load React, ReactDOM and dayjs'))
+			}, 10_000)
+		});
+
+		console.log({ React, ReactDOM, dayjs })
+		console.log(`Loading antd@${version}...`)
+		let antd = await importScript(`https://cdn.jsdelivr.net/npm/antd@${version}/dist/antd.min.js`, 'antd')
+
+		console.log({ antd })
+
+		const $ = tag => document.body.appendChild(document.createElement(tag))
+		const $title = $('h3')
+		$title.textContent = antd.version
+		$title.style.padding = '25px 25px 0'
+		$title.style.marginBottom = '0'
+
+		const section = title => {
+			const $section = $('h4')
+			$section.textContent = title
+			$section.style.padding = '20px 25px 15px'
+			$section.style.marginBottom = '0'
+		}
+
+		let code = '<Button>ok</Button>'
+		let updateEditor = () => {}
+
+		section('Code')
+		const $editor = $('div')
+		$editor.style.margin = '0 25px'
+		await importScript('https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js')
+		require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs' } })
+		require(['vs/editor/editor.main'], () => {
+			const dark = matchMedia('(prefers-color-scheme: dark)')
+			const update = () => monaco.editor.setTheme(dark.matches ? 'vs-dark' : 'vs')
+			dark.addEventListener('change', update)
+			update()
+			const editor = monaco.editor.create($editor, {
+				value: code,
+				language: 'javascript',
+				scrollBeyondLastLine: false,
+				theme: dark.matches ? 'vs-dark' : 'vs',
+			})
+			updateEditor = (code) => editor.setValue(code)
+			const updateHeight = () => {
+				const width = window.innerWidth - 51
+				const height = editor.getContentHeight()
+				$editor.style.width = `${width}px`
+				$editor.style.height = `${height}px`
+				editor.layout({ width, height })
+			}
+			editor.onDidContentSizeChange(updateHeight)
+			updateHeight()
+			editor.onDidChangeModelContent(() => {
+				code = editor.getValue()
+				refresh()
+			})
+		})
+
+		section('Preview')
+		const $preview = $('div')
+		$preview.style.margin = '0 25px'
+
+		section('HTML')
+		const $html = $('pre')
+		$html.style.font = '13px/16px monospace'
+		$html.style.margin = '0 25px'
+		$html.style.whiteSpace = 'pre-wrap'
+
+		let dispose = () => {}
+		async function refresh(fromLocalStorage = false) {
+			try {
+				if (!fromLocalStorage) {
+					localStorage.setItem('antd5to6-code', code)
+				}
+				let compiled = Babel.transform(`var __compiled__ = ${code}`, { presets: ['env', 'react'] }).code
+				let keys = Object.keys(antd)
+				let node = Function('React', ...keys, `${compiled}\nreturn __compiled__;`)(React, ...keys.map(key => antd[key]))
+				dispose()
+				let $dom = $preview.appendChild(document.createElement('div'))
+				let root = createRoot($dom)
+				root.render(node)
+				setTimeout(() => { $html.textContent = format($dom.innerHTML) }, 500)
+				dispose = () => root.unmount()
+			} catch (e) {
+				$preview.textContent = ''
+				$html.textContent = e.stack
+			}
+		}
+
+		function format(html) {
+			const parser = new DOMParser();
+			const doc = parser.parseFromString(html, 'text/html');
+			return formatElement(doc.body.firstElementChild, 0).trim();
+		}
+
+		function formatElement(element, indent) {
+			let result = '';
+			const indentStr = '  '.repeat(indent);
+			const tagName = element.tagName.toLowerCase();
+			result += indentStr + '<' + tagName;
+			for (let attr of element.attributes) {
+				result += ' ' + attr.name + '="' + attr.value.replace(/"/g, '&quot;') + '"';
+			}
+			if (element.childNodes.length === 0) {
+				result += ' />\n';
+			} else {
+				result += '>\n';
+				for (let child of element.childNodes) {
+					if (child.nodeType === Node.TEXT_NODE) {
+						const text = child.textContent.trim();
+						if (text) {
+							result += indentStr + '  ' + text + '\n';
+						}
+					} else if (child.nodeType === Node.ELEMENT_NODE) {
+						result += formatElement(child, indent + 1);
+					}
+				}
+				result += indentStr + '</' + tagName + '>\n';
+			}
+			return result;
+		}
+
+		window.addEventListener('storage', (event) => {
+			if (event.key === 'antd5to6-code' && event.newValue) {
+				code = event.newValue
+				updateEditor(code)
+				refresh(true)
+			}
+		});
+
+		let savedCode = localStorage.getItem('antd5to6-code')
+		if (savedCode) {
+			code = savedCode
+			updateEditor(code)
+		}
+		refresh()
+	</script>
+</body>
+</html>
