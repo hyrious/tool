@@ -12,8 +12,183 @@
 		<a href="?v=5" onclick="open(this.href, 'popup', 'width=800,height=600,left=1000,top=100,resizable=yes,scrollbars=yes'); return false;">v5 <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 32 32"><path fill="currentColor" d="M26 28H6a2.003 2.003 0 0 1-2-2V6a2.003 2.003 0 0 1 2-2h10v2H6v20h20V16h2v10a2.003 2.003 0 0 1-2 2"/><path fill="currentColor" d="M20 2v2h6.586L18 12.586L19.414 14L28 5.414V12h2V2z"/></svg></a>
 	</div>
 
+	<div id="popupContainer"></div>
+
 	<script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/diff2html@3.4.22/bundles/css/diff2html.min.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.7.0/styles/github.min.css" media="(prefers-color-scheme: light)">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.7.0/styles/github-dark.min.css" media="(prefers-color-scheme: dark)">
+	<script src="https://cdn.jsdelivr.net/npm/diff2html@3.4.22/bundles/js/diff2html-ui-slim.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/gh/google/diff-match-patch/javascript/diff_match_patch.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.7.0/highlight.min.js"></script>
+	<style>
+		:root {
+			color-scheme: light;
+			--bg: #fff;
+			--fg: #24292e;
+			--border: #e1e4e8;
+			tab-size: 2;
+		}
+
+		@media (prefers-color-scheme: dark) {
+			:root {
+				color-scheme: dark;
+				--bg: #0d1117;
+				--fg: #c9d1d9;
+				--border: #30363d;
+			}
+		}
+
+		.d2h-file-list-wrapper {
+			border: 1px solid var(--border);
+			border-radius: 3px;
+		}
+
+		.d2h-file-list-header {
+			border-bottom: 1px solid var(--border);
+			padding: 0.5em;
+			flex-direction: row;
+			align-items: center;
+		}
+
+		.d2h-file-list-title {
+			flex: 1;
+		}
+
+		.d2h-file-switch {
+			padding: 0 10px 0 5px;
+			position: relative;
+		}
+
+		.d2h-file-list-wrapper a {
+			font-size: 14px;
+		}
+
+		.d2h-show::before,
+		.d2h-hide::before {
+			content: '';
+			position: absolute;
+			width: 16px;
+			height: 16px;
+			right: 100%;
+			top: 0;
+			bottom: 0;
+			margin: auto 0;
+		}
+
+		.d2h-show::before {
+			background: url("data:image/svg+xml,%0A%3Csvg xmlns='http://www.w3.org/2000/svg' width='1em' height='1em' viewBox='0 0 32 32'%3E%3Cpath fill='%233572b0' d='M9 7c-.621 0-1.227.066-1.813.188a9.238 9.238 0 0 0-.875.218A9.073 9.073 0 0 0 .72 12.5c-.114.27-.227.531-.313.813A8.848 8.848 0 0 0 0 16c0 .93.145 1.813.406 2.656c.004.008-.004.024 0 .032A9.073 9.073 0 0 0 5.5 24.28c.27.114.531.227.813.313A8.83 8.83 0 0 0 9 24.999h14c4.957 0 9-4.043 9-9s-4.043-9-9-9zm0 2c3.879 0 7 3.121 7 7s-3.121 7-7 7s-7-3.121-7-7c0-.242.008-.484.031-.719A6.985 6.985 0 0 1 9 9zm5.625 0H23c3.879 0 7 3.121 7 7s-3.121 7-7 7h-8.375C16.675 21.348 18 18.828 18 16c0-2.828-1.324-5.348-3.375-7z'/%3E%3C/svg%3E")
+				no-repeat center center / contain;
+		}
+
+		.d2h-hide::before {
+			background: url("data:image/svg+xml,%0A%3Csvg xmlns='http://www.w3.org/2000/svg' width='1em' height='1em' viewBox='0 0 32 32'%3E%3Cpath fill='%233572b0' d='M9 7c-4.96 0-9 4.035-9 9s4.04 9 9 9h14c4.957 0 9-4.043 9-9s-4.043-9-9-9zm14 2c3.879 0 7 3.121 7 7s-3.121 7-7 7s-7-3.121-7-7s3.121-7 7-7z'/%3E%3C/svg%3E")
+				no-repeat center center / contain;
+		}
+
+		.d2h-files-diff {
+			flex-direction: row;
+		}
+
+		.d2h-file-header {
+			flex-direction: row;
+		}
+
+		.hljs {
+			background: transparent;
+		}
+
+		.d2h-file-list > li {
+			border-bottom: 1px solid var(--border);
+		}
+
+		@media (prefers-color-scheme: dark) {
+			.d2h-lines-added {
+				border-color: #399839;
+			}
+
+			.d2h-lines-deleted {
+				border-color: #c33;
+			}
+
+			.d2h-file-header {
+				background-color: #161b22;
+				border-bottom-color: #24292e;
+			}
+
+			.d2h-file-list-wrapper a {
+				color: #3381ff;
+			}
+
+			.d2h-file-list-wrapper a:visited {
+				color: #6e7681;
+			}
+
+			.d2h-tag {
+				background-color: #161b22;
+			}
+
+			.d2h-info {
+				background-color: rgba(56, 139, 253, 0.1);
+				color: #6e7681;
+			}
+
+			.d2h-emptyplaceholder,
+			.d2h-code-side-linenumber,
+			.d2h-code-side-emptyplaceholder,
+			.d2h-code-linenumber {
+				background-color: var(--bg);
+				color: #6e7681;
+			}
+
+			.d2h-del,
+			.d2h-file-diff .d2h-del.d2h-change {
+				background-color: #372021;
+			}
+
+			.d2h-code-line del,
+			.d2h-code-side-line del {
+				color: #e6edf3;
+				background-color: #7b3934;
+			}
+			.d2h-ins,
+			.d2h-file-diff .d2h-ins.d2h-change {
+				background-color: #203826;
+			}
+
+			.d2h-code-line ins,
+			.d2h-code-side-line ins {
+				color: #e6edf3;
+				background-color: #376037;
+			}
+		}
+
+		.d2h-file-wrapper {
+			border-color: var(--border);
+		}
+
+		.d2h-code-linenumber,
+		.d2h-code-side-linenumber,
+		.d2h-info,
+		.d2h-emptyplaceholder,
+		.d2h-code-emptyplaceholder {
+			border-color: var(--border);
+		}
+
+		.d2h-del,
+		.d2h-file-diff .d2h-del.d2h-change,
+		.d2h-ins,
+		.d2h-file-diff .d2h-ins.d2h-change {
+			color: var(--fg);
+		}
+
+		:target {
+			box-shadow: 0 0 0 2px #2f81f7;
+		}
+	</style>
 	<script type="module">
+		hljs.configure({ ignoreIllegals: true })
+
 		let version = '6.0.0'
 		let href = new URL(location.href)
 		if (href.searchParams.get('v') == 5) {
@@ -95,16 +270,16 @@
 			$section.style.marginBottom = '0'
 		}
 
-		let code = '<Button>ok</Button>'
+		let code = '<Tooltip title="hello" open><Button>ok</Button></Tooltip>'
 		let updateEditor = () => {}
 
 		section('Code')
 		const $editor = $('div')
 		$editor.style.margin = '0 25px'
+		const dark = matchMedia('(prefers-color-scheme: dark)')
 		await importScript('https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js')
 		require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs' } })
 		require(['vs/editor/editor.main'], () => {
-			const dark = matchMedia('(prefers-color-scheme: dark)')
 			const update = () => monaco.editor.setTheme(dark.matches ? 'vs-dark' : 'vs')
 			dark.addEventListener('change', update)
 			update()
@@ -133,12 +308,10 @@
 		section('Preview')
 		const $preview = $('div')
 		$preview.style.margin = '0 25px'
+		$preview.style.padding = '50px'
 
 		section('HTML')
-		const $html = $('pre')
-		$html.style.font = '13px/16px monospace'
-		$html.style.margin = '0 25px'
-		$html.style.whiteSpace = 'pre-wrap'
+		const $html = $('div')
 
 		let dispose = () => {}
 		async function refresh(fromLocalStorage = false) {
@@ -146,18 +319,38 @@
 				if (!fromLocalStorage) {
 					localStorage.setItem('antd5to6-code', code)
 				}
-				let compiled = Babel.transform(`var __compiled__ = ${code}`, { presets: ['env', 'react'] }).code
+				let wrapped = `
+					<ConfigProvider
+						theme={{ hashed: false, algorithm: ${dark.matches ? 'theme.darkAlgorithm' : 'theme.defaultAlgorithm'} }}
+						getPopupContainer={() => document.getElementById('popupContainer')}
+					>
+						${code.trim()}
+					</ConfigProvider>
+				`.trimStart()
+				let compiled = Babel.transform(`var __compiled__ = ${wrapped}`, { presets: ['env', 'react'] }).code
 				let keys = Object.keys(antd)
 				let node = Function('React', ...keys, `${compiled}\nreturn __compiled__;`)(React, ...keys.map(key => antd[key]))
 				dispose()
+				document.getElementById('popupContainer').innerText = ''
 				let $dom = $preview.appendChild(document.createElement('div'))
 				let root = createRoot($dom)
 				root.render(node)
-				setTimeout(() => { $html.textContent = format($dom.innerHTML) }, 500)
+				setTimeout(() => {
+					let html = format($dom.innerHTML)
+					let popup = document.getElementById('popupContainer').innerHTML
+					if (popup) {
+						html += '\n' + format(popup)
+					}
+					localStorage.setItem(`antd${version[0]}-html`, html)
+					$html.textContent = html
+					$html.style.cssText = 'font: 13px / 16px monospace;margin: 0px 25px;white-space: pre-wrap;'
+					highlightLater()
+				}, 500)
 				dispose = () => root.unmount()
 			} catch (e) {
 				$preview.textContent = ''
 				$html.textContent = e.stack
+				$html.style.cssText = 'font: 13px / 16px monospace;margin: 0px 25px;white-space: pre-wrap;'
 			}
 		}
 
@@ -169,7 +362,7 @@
 
 		function formatElement(element, indent) {
 			let result = '';
-			const indentStr = '  '.repeat(indent);
+			const indentStr = '	'.repeat(indent);
 			const tagName = element.tagName.toLowerCase();
 			result += indentStr + '<' + tagName;
 			for (let attr of element.attributes) {
@@ -183,7 +376,7 @@
 					if (child.nodeType === Node.TEXT_NODE) {
 						const text = child.textContent.trim();
 						if (text) {
-							result += indentStr + '  ' + text + '\n';
+							result += indentStr + '	' + text + '\n';
 						}
 					} else if (child.nodeType === Node.ELEMENT_NODE) {
 						result += formatElement(child, indent + 1);
@@ -200,7 +393,74 @@
 				updateEditor(code)
 				refresh(true)
 			}
+			if (event.key === 'antd5-html' && event.newValue) {
+				highlightLater()
+			}
 		});
+
+		let highlightToken = 0
+		function highlightLater() {
+			clearTimeout(highlightToken)
+			highlightToken = setTimeout(doHighlight, 1000)
+		}
+
+		function doHighlight() {
+			let before = localStorage.getItem('antd5-html')
+			if (version[0] == 5) {
+				$html.style.cssText = 'font: 13px / 16px monospace;margin: 0px 25px;white-space: pre-wrap;'
+				$html.innerHTML = hljs.highlight(before, { language: 'html', ignoreIllegals: true }).value
+				return
+			}
+
+			let after = localStorage.getItem('antd6-html')
+			let dmp = new diff_match_patch()
+			let info = dmp.diff_linesToChars_(before, after)
+			let diffs = dmp.diff_main(info.chars1, info.chars2, false)
+			dmp.diff_charsToLines_(diffs, info.lineArray)
+
+			const prefix = { [-1]: '-', 0: ' ', 1: '+' }
+			let text = ''
+			for (let diff of diffs) {
+				let pref = prefix[diff[0]]
+				let arr = diff[1].split('\n').map(e => pref + e)
+				if (diff[1].at(-1) === '\n') {
+					arr.pop()
+					text += arr.join('\n') + '\n'
+				} else {
+					text += arr.join('\n')
+				}
+			}
+
+			let lines = text.split('\n')
+			let i = 0, m = 0, n = 0
+			let line_numbers = [] // ['+', a_index, b_index, is_fold?][]
+			for (var line of lines) {
+				if (line[0] === ' ') {
+					m++, n++
+				} else if (line[0] === '+') {
+					n++
+				} else if (line[0] === '-') {
+					m++
+				}
+				line_numbers[i] = [line[0], m, n]
+				i++
+			}
+			text = `--- antd5.html\n+++ antd6.html\n@@ -1,${m} +1,${n} @@\n` + text
+
+			let $ui = document.createElement('div')
+			$html.textContent = ''
+			$html.style.cssText = 'margin: 0 25px 50px'
+			$html.appendChild($ui)
+			let ui = new Diff2HtmlUI($ui, text, {
+				diffMaxChanges: undefined,
+				drawFileList: false,
+				outputFormat: 'line-by-line',
+				stickyFileHeaders: false,
+				fileContentToggle: false,
+			})
+			ui.draw()
+			ui.highlightCode()
+		}
 
 		let savedCode = localStorage.getItem('antd5to6-code')
 		if (savedCode) {
