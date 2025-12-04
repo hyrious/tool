@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1.0">
 	<title>antd 5 → 6</title>
 	<meta name="color-scheme" content="light dark">
-	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@6.0.0/dist/reset.css">
+	<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/antd@6.0.1/dist/reset.css">
 </head>
 <body>
 	<div id="v5" style="position: absolute; padding: 25px; inset: 0 0 auto auto;">
@@ -189,7 +189,7 @@
 	<script type="module">
 		hljs.configure({ ignoreIllegals: true })
 
-		let version = '6.0.0'
+		let version = '6.0.1'
 		let href = new URL(location.href)
 		if (href.searchParams.get('v') == 5) {
 			document.getElementById('v5').remove()
@@ -216,12 +216,12 @@
 		}
 
 		if (version[0] == 6) {
-			// Antd v6 must use React 19 [https://github.com/ant-design/ant-design/issues/55889], and
+			// Antd v6 must use React 19.2.0 [https://github.com/ant-design/ant-design/issues/55889], and
 			// React 19 removes the UMD build, it now only has CJS build 🤷, so we must use esm.sh here.
 			Promise.all([
-				import('https://esm.sh/react'),
-				import('https://esm.sh/react-dom'),
-				import('https://esm.sh/react-dom/client'),
+				import('https://esm.sh/react@19.2.0'),
+				import('https://esm.sh/react-dom@19.2.0'),
+				import('https://esm.sh/react-dom@19.2.0/client'),
 			]).then(([React, ReactDOM, ReactDOMClient]) => {
 				globalThis.React = React
 				globalThis.ReactDOM = ReactDOM
