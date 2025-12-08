@@ -65,6 +65,13 @@
             white-space: pre-wrap;
             font-family: monospace;
         }
+        .summary {
+            margin: 0 0 8px;
+            line-height: 1.5;
+            background-color: rgba(127,127,127,.2);
+            padding: 8px;
+            border-radius: 2px;
+        }
     </style>
 </head>
 <body>
@@ -87,6 +94,7 @@
         <p class="warn" id="$no_token" style="display: none;">No token, rate limit will be very small.</p>
         <p class="err" id="$no_date" style="display: none;">No after day.</p>
         <p class="loading" id="$loading" style="display: none;">fetching page 1</p>
+        <p class="summary" id="$summary" style="display: none;"><strong>Summary</strong><br id="$summary_start"></p>
         <ul class="list" id="$events_list"></ul>
     </section>
     <script>
@@ -131,8 +139,9 @@
             render_result()
         }
         const renderer = {
-            PullRequestEvent(ev, html) {
+            PullRequestEvent(ev, html, repos) {
                 const {action, number, pull_request} = ev.payload
+                repos[ev.repo.name] = true
                 html.push(`<li class="pr">
                     <span class="action">${action}</span>
                     <strong class="type">PR</strong>
@@ -147,8 +156,9 @@
             DeleteEvent(ev) {
                 // deleted branch
             },
-            PushEvent(ev, html) {
+            PushEvent(ev, html, repos) {
                 const {commits} = ev.payload
+                repos[ev.repo.name] = true
                 html.push(`<li class="push">
                     <span class="action">pushed</span>
                     <span>to <a href="https://github.com/${ev.repo.name}">${ev.repo.name}</a></span>
@@ -157,6 +167,9 @@
                         ${commits.map(e => `<li class="commit_title">${e.message}</li>`).join('')}
                     </ul>` : ''}
                 </li>`)
+            },
+            ForkEvent(ev) {
+                // forked repo
             },
             WatchEvent(ev) {
                 // starred repo
@@ -195,15 +208,29 @@
         }
         function render_result() {
             let html = []
+            let repos = {}
             for (const ev of window.$events) {
                 let handler = renderer[ev.type]
                 if (!handler) {
                     console.error('No renderer for', ev.type, ev)
                 } else {
-                    handler(ev, html)
+                    handler(ev, html, repos)
                 }
             }
             $events_list.innerHTML = html.join('')
+            while ($summary.lastChild.id !== '$summary_start') {
+                $summary.lastChild.remove()
+            }
+            console.log(repos)
+            let now = new Date().toISOString().slice(0, 10)
+            for (let repo of Object.keys(repos)) {
+                let a = document.createElement('a')
+                a.href = `https://github.com/${repo}/commits/main/?author=${$username.value}&since=${$after.value}&until=${now}`
+                a.textContent = repo
+                $summary.appendChild(a)
+                $summary.appendChild(document.createElement('br'))
+            }
+            $summary.style.display = ''
         }
         function validate() {
             const not = a => a ? 'none' : ''
@@ -236,7 +263,8 @@
         }
         {
             let t = new Date()
-            t.setDate(t.getDate() - t.getDay() + 1) // last Monday before today
+            t.setDate(t.getDate() - 1)
+            t.setDate(t.getDate() - (t.getDay() + 6) % 7) // last Monday before today
             $after.value = t.toISOString().slice(0, 10)
         }
         {
