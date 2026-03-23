@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>Plotly Playground</title>
+	<style>
+		.app {
+			flex: 1;
+			display: grid;
+			grid-template: 1fr auto / 1fr 1fr;
+			overflow: hidden;
+		}
+		.editor, .preview {
+			overflow: hidden;
+			position: relative;
+			&::after {
+				content: attr(class);
+				position: absolute;
+				bottom: 4px;
+				right: 4px;
+				z-index: 100;
+				display: inline-flex;
+				line-height: 1;
+				text-transform: uppercase;
+				font-size: 11px;
+				padding: 4px 6px;
+				background-color: var(--control);
+				pointer-events: none;
+				opacity: .8;
+			}
+		}
+		[data-duration]::before {
+			content: attr(data-duration);
+			position: absolute;
+			bottom: 4px;
+			left: 4px;
+			z-index: 100;
+			display: inline-flex;
+			line-height: 1;
+			font-size: 11px;
+			padding: 4px 6px;
+			background-color: var(--control);
+			pointer-events: none;
+			opacity: .8;
+		}
+		.editor {
+			border-right: 1px solid var(--control);
+			@media (max-width: 768px) {
+				& { border-right-width: 0; }
+			}
+		}
+		.toggle {
+			height: 40px;
+			grid-column: span 2;
+			display: none;
+			align-items: center;
+			justify-content: center;
+			background-color: var(--control);
+			border: none;
+			@media (max-width: 768px) {
+				& { display: flex; }
+			}
+			> span {
+				display: none;
+			}
+			&[data-side="code"] > .code,
+			&[data-side="plot"] > .plot {
+				display: inline-flex;
+				gap: 0.25ic;
+			}
+		}
+		/* Hide CodeMirror active line when selection is not empty */
+		.cm-editor:has(.cm-selectionBackground) .cm-activeLine {
+			background-color: var(--bg-on-transparent);
+			outline: none;
+		}
+		@media (max-width: 768px) {
+			.app {
+				grid-template: 1fr / 1fr auto;
+			}
+			.app:has([data-side="code"]) .editor {
+				display: none;
+			}
+			.app:has([data-side="plot"]) .preview {
+				display: none;
+			}
+		}
+	</style>
+</head>
+<body>
+	<div class="app">
+		<div id="$editor" class="editor"></div>
+		<div id="$preview" class="preview" data-duration="..."></div>
+		<button id="$toggle" class="toggle" data-side="code">
+			<span class="code"><span>&lt;</span><span>Code</span></span>
+			<span class="plot"><span>Plot</span><span>&gt;</span></span>
+		</button>
+	</div>
+	<script src="https://cdn.plot.ly/plotly-3.4.0.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/pyodide/v0.29.3/full/pyodide.js"></script>
+	<script>
+	</script>
+	<script type="module">
+		import { basicSetup, EditorView } from 'https://esm.sh/codemirror'
+		import { Compartment, EditorState } from 'https://esm.sh/@codemirror/state'
+		import { githubLight } from 'https://esm.sh/@ddietr/codemirror-themes/github-light'
+		import { githubDark } from 'https://esm.sh/@ddietr/codemirror-themes/github-dark'
+		import { python } from "https://esm.sh/@codemirror/lang-python"
+
+		const darkTemplate = await fetch('https://cdn.jsdelivr.net/gh/plotly/plotly.py/plotly/package_data/templates/plotly_dark.json').then(r => r.json())
+
+		const theme = new Compartment()
+		const matchDark = matchMedia('(prefers-color-scheme: dark)')
+		const getTheme = () => matchDark.matches ? githubDark : githubLight
+		matchDark.addEventListener('change', () => {
+			editorView.dispatch({ effects: theme.reconfigure(getTheme()) })
+		})
+
+		const readOnly = new Compartment()
+
+		const editorView = new EditorView({
+			doc: '# loading...',
+			parent: $editor,
+			extensions: [
+				basicSetup,
+				EditorView.lineWrapping,
+				EditorView.theme({
+					'&.cm-editor': { height: '100%' },
+					'.cm-scroller': { overflow: 'auto' }
+				}),
+				theme.of(getTheme()),
+				readOnly.of(EditorState.readOnly.of(true)),
+				python(),
+				EditorView.updateListener.of(onUpdate)
+			]
+		})
+		globalThis.editorView = editorView
+
+		$toggle.onclick = () => {
+			$toggle.dataset.side = $toggle.dataset.side === 'code' ? 'plot' : 'code'
+		}
+
+		const onFig = jsonStr => {
+			const json = JSON.parse(jsonStr)
+			json.layout.template = matchDark.matches ? darkTemplate : null
+			json.config = { responsive: true }
+			Plotly.newPlot($preview, json)
+		}
+
+		function onUpdate(update) {
+			if (update.docChanged) {
+				const code = update.state.doc.toString()
+				draw(code)
+				if (demos.includes(code)) return
+				localStorage.setItem('plotly_code', code)
+			}
+		}
+
+		let t = 0
+		function draw(code) {
+			clearTimeout(t)
+			t = setTimeout(doDraw, 500, code)
+		}
+
+		let initialized = false
+		async function doDraw(code) {
+			if (!initialized) {
+				initialized = true
+
+				const py = await loadPyodide()
+				globalThis.py = py
+				await py.loadPackage('micropip')
+				const pip = py.pyimport('micropip')
+				globalThis.pip = pip
+				await pip.install('numpy')
+				await pip.install('pandas')
+				await pip.install('plotly[express]')
+
+				globalThis.onFig = onFig
+				await py.runPythonAsync(`
+					import sys
+					import io
+					import mimetypes
+					mimetypes.init()
+
+					import micropip
+					await micropip.install('pyodide-http')
+
+					import pyodide_http
+					pyodide_http.patch_all()
+
+					import plotly.io as pio
+					pio._orig_show = pio.show
+					def _custom_show(fig, *args, **kwargs):
+						json = fig.to_json()
+						from js import onFig, Object
+						from pyodide.ffi import to_js
+						onFig(to_js(json, dict_converter=Object.fromEntries))
+					pio.show = _custom_show
+				`)
+			}
+			let t = performance.now()
+			await py.runPythonAsync(code)
+			t = performance.now() - t
+			$preview.dataset.duration = `Rendered in ${(t / 1000).toFixed(3)}s`
+		}
+
+		const demo1 = `
+			import plotly.express as px
+			data_canada = px.data.gapminder().query("country == 'Canada'")
+			fig = px.bar(data_canada, x='year', y='pop')
+			fig.show()
+		`.trim().replace(/^\s+/gm, '') + '\n'
+
+		const demo2 = `
+			import plotly.express as px
+			df = px.data.iris() # iris is a pandas DataFrame
+			fig = px.scatter(df, x="sepal_width", y="sepal_length")
+			fig.show()
+		`.trim().replace(/^\s+/gm, '') + '\n'
+
+		const demo3 = `
+			import plotly.express as px
+			df = px.data.gapminder().query("year == 2007").query("continent == 'Europe'")
+			df.loc[df['pop'] < 2.e6, 'country'] = 'Other countries' # Represent only large countries
+			fig = px.pie(df, values='pop', names='country', title='Population of European continent')
+			fig.show()
+		`.trim().replace(/^\s+/gm, '') + '\n'
+
+		const demos = [demo1, demo2]
+		const demo = demos[Math.floor(Math.random() * demos.length)]
+		const code = localStorage.getItem('plotly_code')
+
+		editorView.dispatch({
+			effects: readOnly.reconfigure(EditorState.readOnly.of(false)),
+			changes: { from: 0, to: editorView.state.doc.length, insert: code || demo }
+		})
+		editorView.focus()
+	</script>
+</body>
+</html>
