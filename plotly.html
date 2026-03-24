@@ -78,6 +78,11 @@
 			background-color: var(--bg-on-transparent);
 			outline: none;
 		}
+		.cm-diagnostic {
+			padding: 5px;
+			white-space: pre;
+			font-family: monospace;
+		}
 		@media (max-width: 768px) {
 			.app {
 				grid-template: 1fr / 1fr auto;
@@ -94,7 +99,7 @@
 <body>
 	<div class="app">
 		<div id="$editor" class="editor"></div>
-		<div id="$preview" class="preview" data-duration="..."></div>
+		<div id="$preview" class="preview" data-duration="Loading..."></div>
 		<button id="$toggle" class="toggle" data-side="code">
 			<span class="code"><span>&lt;</span><span>Code</span></span>
 			<span class="plot"><span>Plot</span><span>&gt;</span></span>
@@ -109,7 +114,8 @@
 		import { Compartment, EditorState } from 'https://esm.sh/@codemirror/state'
 		import { githubLight } from 'https://esm.sh/@ddietr/codemirror-themes/github-light'
 		import { githubDark } from 'https://esm.sh/@ddietr/codemirror-themes/github-dark'
-		import { python } from "https://esm.sh/@codemirror/lang-python"
+		import { python } from 'https://esm.sh/@codemirror/lang-python'
+		import { linter, setDiagnostics } from 'https://esm.sh/@codemirror/lint'
 
 		const darkTemplate = await fetch('https://cdn.jsdelivr.net/gh/plotly/plotly.py/plotly/package_data/templates/plotly_dark.json').then(r => r.json())
 
@@ -135,7 +141,8 @@
 				theme.of(getTheme()),
 				readOnly.of(EditorState.readOnly.of(true)),
 				python(),
-				EditorView.updateListener.of(onUpdate)
+				EditorView.updateListener.of(onUpdate),
+				linter()
 			]
 		})
 		globalThis.editorView = editorView
@@ -148,22 +155,28 @@
 			const json = JSON.parse(jsonStr)
 			json.layout.template = matchDark.matches ? darkTemplate : null
 			json.config = { responsive: true }
+			Plotly.purge($preview)
 			Plotly.newPlot($preview, json)
 		}
 
 		function onUpdate(update) {
 			if (update.docChanged) {
+				editorView.dispatch(setDiagnostics(update.state, []))
 				const code = update.state.doc.toString()
 				draw(code)
-				if (demos.includes(code)) return
-				localStorage.setItem('plotly_code', code)
+				localStorage.setItem('plotly_code', demos.includes(code) ? '' : code)
 			}
 		}
 
 		let t = 0
 		function draw(code) {
 			clearTimeout(t)
-			t = setTimeout(doDraw, 500, code)
+			t = setTimeout(doDraw, 300, code)
+		}
+
+		let buffer = []
+		function onOutput(buf, type) {
+			buffer.push([type, buf])
 		}
 
 		let initialized = false
@@ -171,7 +184,9 @@
 			if (!initialized) {
 				initialized = true
 
-				const py = await loadPyodide()
+				const py = await loadPyodide({
+					stderr: msg => onOutput(msg, 1),
+				})
 				globalThis.py = py
 				await py.loadPackage('micropip')
 				const pip = py.pyimport('micropip')
@@ -203,9 +218,21 @@
 					pio.show = _custom_show
 				`)
 			}
+			$preview.dataset.duration = 'Rendering...'
 			let t = performance.now()
-			await py.runPythonAsync(code)
+			buffer.length = 0
+			try {
+				await py.runPythonAsync(code)
+			} catch (e) {
+				onOutput(String(e), 1)
+			}
 			t = performance.now() - t
+			if (buffer.some(e => e[0])) {
+				const out = buffer.map(e => e[1]).join('\n')
+				const m = out.match(/File "<exec>", line (\d+)/)
+				const { from, to } = m ? editorView.state.doc.line(+m[1]) : { from: 0, to: 0 }
+				editorView.dispatch(setDiagnostics(editorView.state, [{ from, to, message: out, severity: 'error' }]))
+			}
 			$preview.dataset.duration = `Rendered in ${(t / 1000).toFixed(3)}s`
 		}
 
@@ -231,7 +258,7 @@
 			fig.show()
 		`.trim().replace(/^\s+/gm, '') + '\n'
 
-		const demos = [demo1, demo2]
+		const demos = [demo1, demo2, demo3]
 		const demo = demos[Math.floor(Math.random() * demos.length)]
 		const code = localStorage.getItem('plotly_code')
 
