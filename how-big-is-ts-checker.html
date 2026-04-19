@@ -9,9 +9,9 @@
 <body style="margin: 0; padding: 8px; box-sizing: border-box; display: grid; place-content: center">
 	<main id="$content" style="text-box: ex alphabetic;"></main>
 	<script type="module">
-		let ok, err
-		await fetch('https://api.github.com/repos/microsoft/TypeScript/contents/src/compiler/checker.ts')
-			.then(async res => { res.ok ? (ok = await res.json()) : (err = await res.text()) }, e => { err = e })
+		let ok = { size: 3151774 }, err // updated on 2026-04-19
+		// await fetch('https://api.github.com/repos/microsoft/TypeScript/contents/src/compiler/checker.ts')
+		// 	.then(async res => { res.ok ? (ok = await res.json()) : (err = await res.text()) }, e => { err = e })
 		if (!ok || err) {
 			console.error(err ||= 'Failed to fetch')
 			$content.textContent = String(err)
