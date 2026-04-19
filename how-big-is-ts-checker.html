@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en" style="display: grid; height: 100%;">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>TypeScript checker.ts</title>
+	<meta name="color-scheme" content="light dark">
+</head>
+<body style="margin: 0; padding: 8px; box-sizing: border-box; display: grid; place-content: center">
+	<main id="$content" style="text-box: ex alphabetic;"></main>
+	<script type="module">
+		let ok, err
+		await fetch('https://api.github.com/repos/microsoft/TypeScript/contents/src/compiler/checker.ts')
+			.then(async res => { res.ok ? (ok = await res.json()) : (err = await res.text()) }, e => { err = e })
+		if (!ok || err) {
+			console.error(err ||= 'Failed to fetch')
+			$content.textContent = String(err)
+			$content.style.color = 'red'
+			window.onerror = () => { window.onerror = void 0; return true }
+			throw 0
+		}
+		ok = new Intl.NumberFormat().format(ok.size) + ' bytes'
+		let c = document.createElement('canvas').getContext('2d')
+		if (!c) {
+			$content.textContent = ok
+			window.onerror = () => { window.onerror = void 0; return true }
+			throw 0
+		}
+		function getFontSize() {
+			let maxWidth = Math.floor(document.documentElement.clientWidth - 32)
+			let font = getComputedStyle(document.documentElement).font
+			let lo = 1, hi = maxWidth
+			while (lo < hi) {
+				let mid = Math.floor((lo + hi) / 2)
+				c.font = font = font.replace(/[\.\d]+px/, `${mid}px`)
+				let w = c.measureText(ok).width
+				if (w > maxWidth) {
+					hi = mid
+				} else {
+					lo = mid + 1
+				}
+			}
+			return lo
+		}
+		function render() {
+			let size = getFontSize()
+			$content.style.fontSize = `${size}px`
+		}
+		window.onresize = render
+		render()
+		$content.textContent = ok
+	</script>
+</body>
+</html>
