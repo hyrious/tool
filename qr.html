@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>QRCode Helper</title>
+	<style>
+		main {
+			flex: 1;
+			padding: 25px 25px 0;
+			display: grid;
+			grid-template: 34fr 21fr / auto;
+		}
+		.dropZone {
+			text-align: center;
+			align-content: center;
+			&:has(img, svg) > .placeholder { display: none }
+		}
+		.content {
+			> textarea {
+				width: stretch;
+				height: 100%;
+				resize: none;
+				padding: 1ch;
+			}
+		}
+		footer {
+			padding: 25px;
+			opacity: .5;
+			text-align: center;
+			&:hover { opacity: 1 }
+			> p { margin: 0 }
+		}
+	</style>
+</head>
+<body>
+
+	<main>
+		<div id="$image" class="dropZone" tabindex="-1">
+			<div class="placeholder">Drop, paste or <a id="$open" href="javascript:void 0">open</a> an image~</div>
+		</div>
+		<div class="content">
+			<textarea id="$text" autocomplete="off" spellcheck="false"></textarea>
+		</div>
+	</main>
+
+	<footer>
+		<p>The qrcode library: <a href="https://github.com/paulmillr/qr" target="_blank">qr</a>.</p>
+	</footer>
+
+	<script type="module">
+		import encodeQR from 'https://esm.sh/qr'
+		import decodeQR from 'https://esm.sh/qr/decode.js'
+
+		let lastText = ''
+		$text.oninput = $text.onchange = $text.onpaste = function encode() {
+			if (lastText !== this.value) {
+				lastText = this.value
+				if (lastText) {
+					draw(encodeQR(lastText, 'svg'))
+				} else {
+					clear()
+				}
+			}
+		}
+
+		document.onpaste = function (ev) {
+			if (ev.target === $text) return;
+			ev.preventDefault()
+			if (ev.clipboardData.files[0]) {
+				drop(ev.clipboardData.files)
+			}
+		}
+
+		document.ondragover = function (ev) {
+			ev.preventDefault()
+		}
+
+		document.ondrop = function (ev) {
+			ev.preventDefault()
+			if (ev.dataTransfer.files[0]) {
+				drop(ev.dataTransfer.files)
+			}
+		}
+
+		let $temp = null
+		$open.onclick =  async function (ev) {
+			ev.preventDefault()
+			if (globalThis.showOpenFilePicker) {
+				try {
+					let handles = await showOpenFilePicker({
+						types: [{
+							description: 'Images',
+							accept: { 'images/*': ['.png', '.gif', '.jpeg', '.jpg', '.webp'] }
+						}],
+						excludeAcceptAllOption: true,
+						multiple: false
+					})
+					let blob = await handles[0].getFile()
+					drop([blob])
+				} catch (err) {
+					console.error(err)
+					$text.value = String(err)
+					lastText = null
+				}
+			} else {
+				if ($temp) $temp.remove()
+				$temp = document.createElement('input')
+				$temp.setAttribute('type', 'file')
+				$temp.style.display = 'none'
+				document.body.appendChild($temp)
+				$temp.click()
+				$temp.onchange = function () {
+					drop(this.files)
+				}
+			}
+		}
+
+		let $img = null
+		async function drop([file]) {
+			clear()
+			try {
+				$img = new Image()
+				$img.src = URL.createObjectURL(file)
+				await $img.decode()
+				place($img)
+				$image.appendChild($img)
+				decode($img)
+			} catch (err) {
+				console.error(err)
+				$text.value = String(err)
+				lastText = null
+			}
+		}
+
+		function decode($img) {
+			let c = globalThis.OffscreenCanvas
+				? new OffscreenCanvas(256, 256)
+				: (function () {
+						let c = document.createElement('canvas')
+						c.width = c.height = 256
+						return c
+					}())
+			let t = c.getContext('2d')
+			t.drawImage($img, 0, 0, 256, 256)
+			let i = t.getImageData(0, 0, 256, 256)
+			$text.value = decodeQR(i)
+			lastText = null
+		}
+
+		window.onresize = function () {
+			if ($svg) place($svg);
+		}
+
+		let domParser = new DOMParser(), $svg = null
+		function draw(svg) {
+			clear()
+			const root = domParser.parseFromString(svg, 'image/svg+xml')
+			$svg = root.getElementsByTagName('svg')[0]
+			$svg.setAttribute('fill', 'var(--front)')
+			place($svg)
+			$image.appendChild($svg)
+		}
+
+		function place(image) {
+			let maxWidth = document.documentElement.clientWidth - 50
+			let maxHeight = (document.documentElement.clientHeight - 93.4) * 34 / 55
+			let max = Math.min(maxWidth, maxHeight)
+			let attr = image.naturalWidth < image.naturalHeight ? 'height' : 'width'
+			image.setAttribute(attr, `${Math.floor(max * 0.8)}px`)
+		}
+
+		function clear() {
+			if ($svg) {
+				$svg.remove()
+				$svg = null
+			}
+			if ($img) {
+				$img.remove()
+				$img = null
+			}
+		}
+	</script>
+</body>
+</html>
