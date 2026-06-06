@@ -19,6 +19,8 @@
             align-items: center;
             justify-content: center;
             overflow: hidden;
+            font-family: monospace;
+            line-height: 2;
         }
         canvas {
             max-width: 100%;
@@ -32,6 +34,34 @@
         .progress {
             width: 90%;
         }
+        .gallery-btn {
+            position: fixed;
+            inset: 1rem 1rem auto auto;
+            background: none;
+            border: none;
+            padding: 1rem;
+            cursor: pointer;
+        }
+        .gallery-btn:hover {
+            color: hotpink;
+        }
+        .gallery-btn:active {
+            color: red;
+        }
+        .gallery {
+            position: fixed;
+            inset: 0;
+            padding: 1rem;
+            display: flex;
+            flex-flow: row wrap;
+            gap: 1rem;
+            overflow: scroll;
+            background: rgba(0, 0, 0, .5);
+        }
+        .gallery > canvas {
+            width: 12%;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -39,6 +69,8 @@
     <span class="tip">Drag & Drop a GIF here.</span>
     <input id="progress" class="progress" type="range" style="display: none;">
     <label for="progress"></label>
+    <article id="gallery" class="gallery" style="display: none"></article>
+    <button id="galleryBtn" class="gallery-btn" title="gallery" style="display: none">𓃑</button>
     <script src="https://cdn.jsdelivr.net/npm/omggif@1.0.10/omggif.js"></script>
     <script>
         Object.assign(document.body, {
@@ -63,7 +95,7 @@
                         return
                     }
                     console.log(gr)
-                    tip.textContent = `[width: ${gr.width}, height: ${gr.height}]`
+                    tip.textContent = `${gr.width} x ${gr.height}`
                     canvas.width = gr.width
                     canvas.height = gr.height
                     const ctx = canvas.getContext('2d')
@@ -72,6 +104,7 @@
                         min: 0, max: 0, step: 1, value: 0
                     })
                     progress.style.display = ''
+                    galleryBtn.style.display = ''
 
                     const cached = Array(gr.numFrames())
 
@@ -89,34 +122,38 @@
                     }
 
                     // Disposal: how to dispose current frame
-                    // 0 - clear before draw next frame
+                    // 0 - clear before draw next frame, in practice treat it same as 1
                     // 1 - leave it as is (do nothing)
                     // 2 - restore background
-                    // 3 - restore to nearest frame with disposal=1 (deprecated)
+                    // 3 - restore previous frame
 
                     (async () => {
-                        let last, last_disposal = 1
+                        gallery.textContent = ''
+                        let pixels = ctx.createImageData(gr.width, gr.height)
                         for (let i = 0; i < cached.length; ++i) {
-                            const pixels = ctx.createImageData(gr.width, gr.height)
                             const info = gr.frameInfo(i)
-
-                            /**/ if (last_disposal === 0) {
-                                // yep, pixels is already cleared
-                            }
-                            else if (last_disposal === 1) {
-                                // copy previous frame
-                                last && pixels.data.set(last.data)
-                            }
-                            else if (last_disposal === 2) {
-                                // restore background, here we just do nothing
-                            }
-                            else if (last_disposal === 3) {
-                                console.warn('[disposal = 3] is not supported', info)
-                            }
-
+                            // Remember previous frame if we need to restore it later
+                            const before = info.disposal === 3 ? new Uint8ClampedArray(pixels.data) : null
+                            // Draw current frame
                             gr.decodeAndBlitFrameRGBA(i, pixels.data)
-                            last = cached[i] = pixels
-                            last_disposal = info.disposal
+                            cached[i] = new ImageData(new Uint8ClampedArray(pixels.data), gr.width, gr.height)
+                            const item = gallery.appendChild(document.createElement('canvas'))
+                            item.dataset.i = String(i)
+                            item.width = gr.width
+                            item.height = gr.height
+                            item.getContext('2d').putImageData(cached[i], 0, 0)
+                            // Dispose, (0, 1) = do nothing
+                            if (info.disposal === 2) {
+                                for (let y = info.y; y < info.y + info.height; ++y) {
+                                    const start = (y * gr.width + info.x) * 4
+                                    pixels.data.fill(0, start, start + info.width * 4)
+                                }
+                            } else if (info.disposal === 3) {
+                                for (let y = info.y; y < info.y + info.height; ++y) {
+                                    const start = (y * gr.width + info.x) * 4
+                                    pixels.data.set(before.subarray(start, start + info.width * 4), start)
+                                }
+                            }
                             progress.value = progress.max = i
                             refresh()
                             await new Promise(requestAnimationFrame)
@@ -125,6 +162,21 @@
                         progress.oninput = refresh
                         refresh()
                     })()
+
+                    let showGallery = false
+                    galleryBtn.onclick = () => {
+                        showGallery = !showGallery
+                        gallery.style.display = showGallery ? '' : 'none'
+                    }
+
+                    gallery.onclick = (ev) => {
+                        let i = Number(ev.target.dataset?.i)
+                        if (Number.isInteger(i)) {
+                            progress.value = String(i)
+                            refresh()
+                            galleryBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+                        }
+                    }
                 })
             }
         })
