@@ -166,14 +166,34 @@
 
             return { width, height, data }
         }
+        const defaultTitle = document.title
+        let titleTimer = 0
+        let titleVersion = 0
+        function setPortalTitle(title, { restoreAfter = 0 } = {}) {
+            const version = ++titleVersion
+            clearTimeout(titleTimer)
+            document.title = title
+            if (restoreAfter) {
+                titleTimer = setTimeout(() => {
+                    if (version === titleVersion) {
+                        document.title = defaultTitle
+                        titleVersion++
+                    }
+                }, restoreAfter)
+            }
+        }
+        async function writeClipboard(data) {
+            await navigator.clipboard.write(data)
+            setPortalTitle('Copied to clipboard', { restoreAfter: 1500 })
+        }
         async function load(file) {
             if (!file) return;
 
             const buffer = await file.arrayBuffer()
             if (isHeic(buffer)) {
-                document.title = 'decoding HEIC...'
+                setPortalTitle('decoding HEIC...')
                 const { width, height, data } = await decodeHeic(buffer)
-                document.title = 'rendering HEIC...'
+                setPortalTitle('rendering HEIC...')
 
                 make_hint(width, height)
                 $preview_div.classList.remove('hidden')
@@ -186,12 +206,10 @@
                 ctx.putImageData(new ImageData(new Uint8ClampedArray(data), width, height), 0, 0)
 
                 canvas.toBlob(async blob => {
-                    document.title = 'Image Portal'
-
                     if (!blob) throw new Error('canvas.toBlob() failed');
 
                     const data = [new ClipboardItem({ [blob.type]: blob })]
-                    await navigator.clipboard.write(data)
+                    await writeClipboard(data)
 
                     // Fix the preview image, since we do not support GIF
                     URL.revokeObjectURL($preview.src)
@@ -230,7 +248,7 @@
             try {
                 make_hint()
                 const data = [new ClipboardItem({ [file.type]: file })]
-                await navigator.clipboard.write(data)
+                await writeClipboard(data)
             }
             // Not supported image format, try canvas
             catch (error) {
@@ -249,7 +267,7 @@
                     if (!blob) throw new Error('canvas.toBlob() failed');
 
                     const data = [new ClipboardItem({ [blob.type]: blob })]
-                    await navigator.clipboard.write(data)
+                    await writeClipboard(data)
 
                     // Fix the preview image, since we do not support GIF
                     URL.revokeObjectURL($preview.src)
