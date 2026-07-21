@@ -1,3 +1,4 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,412 +7,697 @@
   <link rel="stylesheet" href="style.css">
   <script src="favicon.js"></script>
   <script src="theme.js"></script>
+  <script src="gif-transfer.js"></script>
   <title>MP4 to GIF</title>
   <style>
     .error,
     .warning {
       margin: 0;
-      padding: 1rem;
+      padding: 0.75rem 1rem;
+    }
+    .error {
       background-color: rgba(255, 0, 0, 0.2);
     }
     .warning {
       background-color: rgba(255, 255, 0, 0.2);
     }
-    .info {
-      padding: 1rem;
-      font-size: 14px;
-      padding: 0.5rem;
-      background: var(--control);
-    }
-    .prompt {
-      padding: 1em;
-      text-decoration: underline;
-    }
     .file {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: 130px;
       display: flex;
       align-items: center;
       justify-content: center;
-      white-space: pre-wrap;
-      height: 150px;
+      padding: 1rem;
       border: 2px dashed var(--control);
       border-radius: 6px;
       cursor: pointer;
+      text-align: center;
+      white-space: pre-wrap;
     }
-    .file.active {
-      border: 2px solid;
-    }
-    .progress {
-      position: relative;
-    }
-    .progress::before {
+    .file::before {
       content: "";
       position: absolute;
-      top: 0; left: 0; bottom: 0;
-      width: var(--w, 0px);
-      background-color: var(--control);
+      z-index: 0;
+      inset: 0 auto 0 0;
+      width: var(--progress, 0%);
+      background: var(--control);
+      opacity: 0;
+      transition: width 180ms linear, opacity 120ms linear;
     }
-    .output {
-      flex: 1;
-      display: flex;
-      align-items: flex-start;
-      gap: 1ch;
+    .file.progress::before {
+      opacity: 0.55;
     }
-    sub {
-      font-weight: normal;
+    .file > span {
+      position: relative;
+      z-index: 1;
     }
-    img {
+    .file.active {
+      border-style: solid;
+      border-color: currentColor;
+    }
+    .workspace {
+      display: grid;
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+      min-width: 0;
+    }
+    .preview-stage {
       max-width: 100%;
+      overflow: auto;
+    }
+    .preview {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+      background: #000;
+    }
+    .settings {
+      min-width: 0;
+    }
+    .settings fieldset {
+      margin: 0;
+      padding: 0;
+      border: 0;
+    }
+    .control {
+      display: grid;
+      grid-template-columns: 4.5rem minmax(120px, 1fr) minmax(10rem, auto);
+      gap: 0.75rem;
+      align-items: center;
+      margin: 1rem 0;
+    }
+    .control > input {
+      width: 100%;
+    }
+    .size-control {
+      grid-template-columns: 4.5rem minmax(80px, 1fr) minmax(10rem, auto);
+    }
+    .control output {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+    .dimensions {
+      display: grid;
+      grid-template-columns: minmax(3.5rem, 1fr) auto minmax(3.5rem, 1fr);
+      gap: 0.4rem;
+      align-items: center;
+    }
+    .dimensions input {
+      width: 100%;
+      box-sizing: border-box;
+      font-variant-numeric: tabular-nums;
+    }
+    .actions,
+    .result-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    button {
+      padding: 0.5rem 0.85rem;
+    }
+    .result {
+      display: grid;
+      gap: 1rem;
+    }
+    .result-preview {
+      overflow: auto;
+      max-width: 100%;
+    }
+    .result img {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: none;
+      max-height: none;
+    }
+    .license {
+      margin: auto 5% 0;
+      padding: 2rem 0 1rem;
+      color: var(--control-text, currentColor);
+      font-size: 0.8rem;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    @media (max-width: 720px) {
+      .control {
+        grid-template-columns: 4rem 1fr;
+      }
+      .control output {
+        grid-column: 2;
+        text-align: left;
+      }
+      .size-control {
+        grid-template-columns: 4rem minmax(60px, 1fr) minmax(8rem, auto);
+        gap: 0.5rem;
+      }
     }
   </style>
 </head>
 <body>
   <h1 class="title">MP4 to GIF</h1>
 
-  <section id="$error" style="display: none">
-    <p id="$error_text" class="error"></p>
+  <section id="error" hidden>
+    <p id="error-text" class="error"></p>
   </section>
 
-  <section id="$not_supported" style="display: none">
+  <section id="not-supported" hidden>
     <p class="warning">
-      Your browser does not support <a href="https://caniuse.com/webcodecs" rel="noreferrer" target="_blank">VideoDecoder</a>,
-      please use the latest chrome to open this page.
+      This tool needs <a href="https://caniuse.com/webcodecs" rel="noreferrer" target="_blank">WebCodecs</a>
+      and OffscreenCanvas. Please use a recent Chromium-based browser.
     </p>
   </section>
 
-  <section class="content" id="$content">
-    <input id="$file" style="display: none" type="file" accept="video/*">
-    <label id="$file_label" for="$file" class="file">Drag & drop mp4 file here.</label>
+  <section id="content">
+    <input id="file" hidden type="file" accept="video/mp4,.mp4">
+    <label id="file-label" for="file" class="file">
+      <span id="file-label-text">Drop an MP4 here or choose a file.</span>
+    </label>
+
+    <div id="workspace" class="workspace" hidden>
+      <div class="settings">
+        <fieldset id="settings">
+          <div class="control size-control">
+            <label for="scale">Size</label>
+            <input id="scale" type="range" min="0.1" max="100" step="0.1" value="50">
+            <div class="dimensions">
+              <input id="target-width" type="number" min="1" step="1" inputmode="numeric" aria-label="Target width" title="Target width">
+              <span aria-hidden="true">×</span>
+              <input id="target-height" type="number" min="1" step="1" inputmode="numeric" aria-label="Target height" title="Target height">
+            </div>
+          </div>
+
+          <label class="control" for="fps">
+            <span>FPS</span>
+            <input id="fps" type="range" min="1" max="30" step="1" value="15">
+            <output id="fps-output" for="fps"></output>
+          </label>
+
+          <label class="control" for="quality">
+            <span>Quality</span>
+            <input id="quality" type="range" min="1" max="100" step="1" value="80">
+            <output id="quality-output" for="quality"></output>
+          </label>
+
+          <div class="actions">
+            <button id="convert" type="button">Convert to GIF</button>
+            <button id="cancel" type="button" hidden>Cancel</button>
+          </div>
+        </fieldset>
+      </div>
+
+      <div id="preview-stage" class="preview-stage">
+        <video id="preview" class="preview" controls muted playsinline></video>
+      </div>
+    </div>
   </section>
 
-  <section class="output">
-    <img src="" id="$output">
-    <button id="$download" disabled hidden>Download</button>
+  <section id="result-section" hidden>
+    <div class="result">
+      <div class="result-actions">
+        <button id="download" type="button">Download GIF</button>
+        <button id="open-gif-viewer" type="button">Open in GIF Viewer</button>
+        <span id="result-info"></span>
+      </div>
+      <div class="result-preview">
+        <img id="output" alt="Converted GIF preview">
+      </div>
+    </div>
   </section>
 
-  <script src="https://cdn.jsdelivr.net/npm/mp4box@0.5.2/dist/mp4box.all.min.js"></script>
+  <footer class="license">
+    This converter is licensed under
+    <a href="https://www.gnu.org/licenses/agpl-3.0.html" rel="noreferrer" target="_blank">AGPL-3.0-or-later</a>
+    and uses
+    <a href="https://github.com/jamsinclair/gifski-wasm/tree/2.2.0" rel="noreferrer" target="_blank">gifski-wasm 2.2.0</a>
+    with its
+    <a href="https://github.com/jamsinclair/gifski-lite/tree/c04e3f28f5b9bed51d141789ce54619caf5b7495" rel="noreferrer" target="_blank">pinned encoding core</a>.
+  </footer>
 
-  <!-- <script src="octree.js"></script> -->
-  <script type="module">
-    /// References:
-    /// https://web.dev/webcodecs#decoding
-    /// https://github.com/mattdesl/gifenc (MIT)
+  <script>
+    class Mp4ToGifApp {
+      constructor() {
+        this.file = undefined
+        this.sourceUrl = undefined
+        this.outputUrl = undefined
+        this.outputBlob = undefined
+        this.worker = undefined
+        this.progressTimer = undefined
+        this.completionTimer = undefined
+        this.progressValue = 0
+        this.progressCeiling = 0
+        this.progressMessage = ''
+        this.dragDepth = 0
+        this.width = 0
+        this.height = 0
+        this.duration = 0
+        this.metadataReady = false
+        this.fileSummary = ''
+        this.requestedWidth = undefined
+        this.requestedHeight = undefined
 
-    if (!window.VideoDecoder) {
-      $not_supported.style.display = ''
-      throw new Error('VideoDecoder is not supported, refuse to work.')
-    }
+        this.fileInput = document.querySelector('#file')
+        this.fileLabel = document.querySelector('#file-label')
+        this.fileLabelText = document.querySelector('#file-label-text')
+        this.workspace = document.querySelector('#workspace')
+        this.preview = document.querySelector('#preview')
+        this.scale = document.querySelector('#scale')
+        this.widthInput = document.querySelector('#target-width')
+        this.heightInput = document.querySelector('#target-height')
+        this.fps = document.querySelector('#fps')
+        this.fpsOutput = document.querySelector('#fps-output')
+        this.quality = document.querySelector('#quality')
+        this.qualityOutput = document.querySelector('#quality-output')
+        this.convertButton = document.querySelector('#convert')
+        this.cancelButton = document.querySelector('#cancel')
+        this.error = document.querySelector('#error')
+        this.errorText = document.querySelector('#error-text')
+        this.resultSection = document.querySelector('#result-section')
+        this.output = document.querySelector('#output')
+        this.downloadButton = document.querySelector('#download')
+        this.openGifViewerButton = document.querySelector('#open-gif-viewer')
+        this.resultInfo = document.querySelector('#result-info')
 
-    const options = Object.fromEntries(Array.from(new URLSearchParams(location.search)))
-    const gifenc_p = import('https://cdn.jsdelivr.net/npm/gifenc@1.0.3/dist/gifenc.esm.js')
-
-    $file_label.ondragover = function ondragover(ev) {
-      preventEvent(ev)
-    }
-    let dragging = 0
-    $file_label.ondragenter = function ondragenter(ev) {
-      preventEvent(ev)
-      if (!isFilesDragEvent(ev)) return;
-      $file_label.classList.add('active')
-      dragging++
-    }
-    $file_label.ondragleave = function ondragleave(ev) {
-      preventEvent(ev)
-      if (!isFilesDragEvent(ev)) return;
-      if (--dragging === 0) $file_label.classList.remove('active')
-    }
-    $file_label.ondrop = function ondrop(ev) {
-      preventEvent(ev)
-      dragging = 0
-      $file_label.classList.remove('active')
-      loadFile(ev.dataTransfer.files)
-    }
-    $file.oninput = function oninput(ev) {
-      preventEvent(ev)
-      loadFile(this.files)
-    }
-
-    function preventEvent(ev) {
-      ev.stopPropagation();
-      if (ev.cancelable) {
-        ev.preventDefault();
-      }
-    }
-
-    const indexOf = Array.prototype.indexOf
-    function isFilesDragEvent(ev, dt = ev.dataTransfer) {
-      return dt && dt.types && indexOf.call(dt.types, 'Files') !== -1
-    }
-
-    async function loadFile(files) {
-      if (files && files.length === 1) {
-        const buffer = await files[0].arrayBuffer()
-        hideError()
-        startDecoding(buffer)
-      }
-    }
-
-    function setProgress(percent) {
-      if (percent > 0) {
-        $file_label.classList.add('progress')
-        $file_label.style.setProperty('--w', percent + '%')
-      } else {
-        $file_label.classList.remove('progress')
-      }
-    }
-
-    function showError(err) {
-      $error_text.textContent = err.message
-      $error.style.display = ''
-    }
-
-    function hideError() {
-      $error.style.display = 'none'
-    }
-
-    let raf, frames, decoder, mp4file, track, config, knownColors, gifenc
-
-    function onReady(info) {
-      track = info.videoTracks[0]
-      config = {
-        codec: track.codec,
-        codedWidth: track.video.width,
-        codedHeight: track.video.height,
-        description: getDescription(track),
-      }
-      updateDecoding1()
-      try {
-        decoder.configure(config)
-      } catch (err) {
-        $error_text.textContent = err.message
-        $error.style.display = ''
-        return;
+        this.applyQueryOptions()
+        this.bindEvents()
+        this.updateFrameSettings()
       }
 
-      mp4file.setExtractionOptions(track.id)
-      mp4file.start()
-      mp4file.flush()
-      decoder.flush().then(() => {
-        if (raf) requestAnimationFrame(finishDecoding);
-        else finishDecoding()
-      })
+      applyQueryOptions() {
+        const query = new URLSearchParams(location.search)
+        const scale = Number(query.get('scale'))
+        const fps = Number(query.get('fps'))
+        const quality = Number(query.get('quality'))
+        const width = Number(query.get('width'))
+        const height = Number(query.get('height'))
 
-      function getDescription(track) {
-        const trak = mp4file.getTrackById(track.id)
-        for (const entry of trak.mdia.minf.stbl.stsd.entries) {
-          if (entry.avcC || entry.hvcC) {
-            const stream = new DataStream(undefined, 0, DataStream.BIG_ENDIAN)
-            if (entry.avcC) {
-              entry.avcC.write(stream)
-            } else {
-              entry.hvcC.write(stream)
-            }
-            return new Uint8Array(stream.buffer, 8)
-          }
-        }
-        console.warn('description: not found avc or hevc desc.')
-        return null
-      }
-    }
-
-    function onSamples(trackId, ref, samples) {
-      for (const sample of samples) {
-        decoder.decode(new EncodedVideoChunk({
-          type: sample.is_sync ? 'key' : 'delta',
-          timestamp: 1e6 * sample.cts / sample.timescale,
-          duration: 1e6 * sample.duration / sample.timescale,
-          data: sample.data,
-        }))
-      }
-    }
-
-    function startDecoding(buffer) {
-      frames = []
-      decoder && decoder.close()
-      decoder = new VideoDecoder({
-        output(frame) {
-          const scale = Number(options.scale) || 1
-          const canvas = document.createElement('canvas')
-          canvas.width = frame.displayWidth * scale
-          canvas.height = frame.displayHeight * scale
-          canvas.getContext('2d').drawImage(frame, 0, 0, canvas.width, canvas.height)
-          canvas.timestamp = frame.timestamp // microseconds, (/ 1000) to get miliseconds
-          frame.close() // ! this is important, otherwise the decoder will block forever
-          frames.push(canvas)
-          raf ||= requestAnimationFrame(updateDecoding2)
-        },
-        error: console.error,
-      })
-
-      mp4file = MP4Box.createFile()
-      mp4file.onError = console.error
-      mp4file.onReady = onReady
-      mp4file.onSamples = onSamples
-
-      buffer.fileStart = 0
-      mp4file.appendBuffer(buffer)
-      mp4file.flush()
-    }
-
-    let decoding1
-    function updateDecoding1() {
-      decoding1 ||= document.createElement('samp')
-      decoding1.textContent = `${config.codec} - ${config.codedWidth}x${config.codedHeight}`
-      $file_label.innerHTML = ''
-      $file_label.appendChild(decoding1)
-    }
-
-    let decoding2
-    function updateDecoding2() {
-      decoding2 ||= document.createElement('samp')
-      decoding2.textContent = ` ~ ${frames.length} frames`
-      $file_label.appendChild(decoding2)
-      raf = 0
-    }
-
-    async function finishDecoding() {
-      decoding2.textContent = ` - ${frames.length} frames`
-      window.__DEBUG__ = { frames, config, timestamps: frames.map(e => e.timestamp / 1e3) }
-      console.debug(window.__DEBUG__)
-      gifenc = await gifenc_p
-      beforeEncodingGIF()
-    }
-
-    async function beforeEncodingGIF() {
-      // console.time('prepare')
-
-      // const { Octree } = octree
-      // const tree = new Octree()
-      // for (const canvas of frames) {
-      //   const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
-      //   const { width, height } = imageData
-      //   const uin32 = new Uint32Array(imageData.data.buffer)
-      //   const step = Math.max(width, height) / 20 | 0
-      //   const len = width * height
-      //   for (let i = 0; i < len; i += step) {
-      //     tree.push(uin32[i])
-      //   }
-      // }
-      // const nodes = tree.get()
-      // knownColors = nodes.map(c => [
-      //   (c.R < 0 ? 0 : c.R > 0xFF ? 0xFF : Math.round(c.R)),
-      //   (c.G < 0 ? 0 : c.G > 0xFF ? 0xFF : Math.round(c.G)),
-      //   (c.B < 0 ? 0 : c.B > 0xFF ? 0xFF : Math.round(c.B)),
-      // ])
-
-      // console.timeEnd('prepare')
-      startEncodingGIF()
-    }
-
-    function clamp_round(value) {
-      value < 0 ? 0 : value > 255 ? 255 : Math.round(value)
-    }
-
-    async function startEncodingGIF() {
-      console.time('gifenc')
-
-      const gifFrames = []
-
-      const totalFrames = frames.length
-      let remainingFrames = totalFrames
-      let frameIndex = 0
-
-      const { GIFEncoder } = gifenc
-      const gif = GIFEncoder({ auto: false })
-      gif.writeHeader()
-
-      let workerIndex = 0
-      const workerCount = Math.max(2, navigator.hardwareConcurrency - 1)
-
-      let finish
-      const promise = new Promise(resolve => {
-        finish = resolve
-      })
-
-      const workers = new Array(workerCount)
-      for (let i = 0; i < workerCount; ++i) {
-        const worker = new Worker('./gifenc-worker.js', { type: 'module' })
-        worker.onmessage = function onmessage(ev) {
-          const { frame, data } = ev.data
-          gifFrames[frame] = data
-          remainingFrames--
-          setProgress(100 * (totalFrames - remainingFrames) / totalFrames)
-          if (remainingFrames <= 0) {
-            finish()
-          }
-        }
-        workers[i] = worker
+        if (scale > 0) this.scale.value = String(clamp(scale <= 1 ? scale * 100 : scale, 0.1, 100))
+        if (fps > 0) this.fps.value = String(clamp(fps, 1, 30))
+        if (quality > 0) this.quality.value = String(clamp(quality, 1, 100))
+        if (width > 0) this.requestedWidth = Math.round(width)
+        if (height > 0) this.requestedHeight = Math.round(height)
       }
 
-      function getDelay(frame) {
-        if (frame + 1 < totalFrames) {
-          const curr = frames[frame].timestamp / 1e3
-          const next = frames[frame + 1].timestamp / 1e3
-          return next - curr
+      bindEvents() {
+        this.fileInput.addEventListener('change', () => this.loadFiles(this.fileInput.files))
+        this.fileLabel.addEventListener('dragover', preventEvent)
+        this.fileLabel.addEventListener('dragenter', event => {
+          preventEvent(event)
+          if (!isFilesDragEvent(event)) return
+          this.dragDepth++
+          this.fileLabel.classList.add('active')
+        })
+        this.fileLabel.addEventListener('dragleave', event => {
+          preventEvent(event)
+          if (!isFilesDragEvent(event)) return
+          this.dragDepth--
+          if (this.dragDepth <= 0) this.fileLabel.classList.remove('active')
+        })
+        this.fileLabel.addEventListener('drop', event => {
+          preventEvent(event)
+          this.dragDepth = 0
+          this.fileLabel.classList.remove('active')
+          this.loadFiles(event.dataTransfer.files)
+        })
+
+        this.scale.addEventListener('input', () => this.updateFromScale())
+        this.widthInput.addEventListener('input', () => this.updateFromWidth())
+        this.heightInput.addEventListener('input', () => this.updateFromHeight())
+        this.widthInput.addEventListener('change', () => this.normalizeDimensions('width'))
+        this.heightInput.addEventListener('change', () => this.normalizeDimensions('height'))
+        this.fps.addEventListener('input', () => this.updateFrameSettings())
+        this.quality.addEventListener('input', () => this.updateFrameSettings())
+
+        this.preview.addEventListener('loadedmetadata', () => this.handleMetadata())
+        this.preview.addEventListener('error', () => this.showError(new Error('The browser could not preview this video.')))
+        this.convertButton.addEventListener('click', () => this.convert())
+        this.cancelButton.addEventListener('click', () => this.cancel())
+        this.downloadButton.addEventListener('click', () => this.download())
+        this.openGifViewerButton.addEventListener('click', () => this.openInGifViewer())
+        window.addEventListener('beforeunload', () => this.dispose())
+      }
+
+      loadFiles(files) {
+        if (!files || files.length != 1) return
+
+        this.cancel(false)
+        this.clearProgress()
+        this.hideError()
+        this.clearResult()
+        this.file = files[0]
+        this.fileInput.value = ''
+        this.width = 0
+        this.height = 0
+        this.duration = 0
+        this.metadataReady = false
+        this.convertButton.disabled = true
+        this.widthInput.value = ''
+        this.heightInput.value = ''
+        this.updateVideoSize()
+
+        if (this.sourceUrl) URL.revokeObjectURL(this.sourceUrl)
+        this.sourceUrl = URL.createObjectURL(this.file)
+        this.preview.src = this.sourceUrl
+        this.fileSummary = this.file.name
+        this.setFileLabel(this.fileSummary)
+        this.workspace.hidden = false
+        this.updateFrameSettings()
+      }
+
+      handleMetadata() {
+        this.width = this.preview.videoWidth
+        this.height = this.preview.videoHeight
+        this.duration = Number.isFinite(this.preview.duration) ? this.preview.duration : 0
+        this.metadataReady = true
+        if (!this.worker) this.convertButton.disabled = false
+        this.widthInput.max = String(this.width)
+        this.heightInput.max = String(this.height)
+        this.fileSummary = `${this.file.name} · ${this.width}×${this.height} · ${formatDuration(this.duration)} · ${prettySize(this.file.size)}`
+        this.setFileLabel(this.fileSummary)
+
+        if (this.requestedWidth) {
+          this.widthInput.value = String(this.requestedWidth)
+          this.updateFromWidth()
+        } else if (this.requestedHeight) {
+          this.heightInput.value = String(this.requestedHeight)
+          this.updateFromHeight()
         } else {
-          return 1000 / 30
+          this.updateFromScale()
         }
       }
 
-      function addFrame(imageData, frame) {
-        const next = workers[workerIndex++ % workers.length]
-        next.postMessage({
-          transparent: true,
-          frame,
-          knownColors,
-          delay: getDelay(frame),
-          width: imageData.width,
-          height: imageData.height,
-          data: imageData.data,
-        }, [imageData.data.buffer])
+      updateFromScale() {
+        if (!this.width || !this.height) return
+        const scale = Number(this.scale.value) / 100
+        this.widthInput.value = String(Math.max(1, Math.round(this.width * scale)))
+        this.heightInput.value = String(Math.max(1, Math.round(this.height * scale)))
+        this.updateDimensions()
       }
 
-      setTimeout(tick, 0)
-      function tick() {
-        if (frameIndex < totalFrames) {
-          const canvas = frames[frameIndex]
-          const imageData = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height)
-          addFrame(imageData, frameIndex)
-          frameIndex++
-          setTimeout(tick, 0)
+      updateFromWidth() {
+        const value = Number(this.widthInput.value)
+        if (!this.width || !this.height || !Number.isFinite(value) || value <= 0) return
+
+        const width = clamp(Math.round(value), 1, this.width)
+        const height = Math.max(1, Math.round(width * this.height / this.width))
+        this.widthInput.value = String(width)
+        this.heightInput.value = String(height)
+        this.scale.value = String(100 * width / this.width)
+        this.updateDimensions()
+      }
+
+      updateFromHeight() {
+        const value = Number(this.heightInput.value)
+        if (!this.width || !this.height || !Number.isFinite(value) || value <= 0) return
+
+        const height = clamp(Math.round(value), 1, this.height)
+        const width = Math.max(1, Math.round(height * this.width / this.height))
+        this.widthInput.value = String(width)
+        this.heightInput.value = String(height)
+        this.scale.value = String(100 * height / this.height)
+        this.updateDimensions()
+      }
+
+      normalizeDimensions(source) {
+        const input = source == 'width' ? this.widthInput : this.heightInput
+        if (Number(input.value) > 0) {
+          if (source == 'width') this.updateFromWidth()
+          else this.updateFromHeight()
+        } else {
+          this.updateFromScale()
         }
       }
 
-      await promise;
-      for (let i = 0; i < totalFrames; ++i) {
-        gif.stream.writeBytesView(gifFrames[i])
+      updateDimensions() {
+        this.updateFrameSettings()
+        this.updateVideoSize()
       }
-      gif.finish()
-      workers.forEach(w => w.terminate())
 
-      console.timeEnd('gifenc')
+      updateFrameSettings() {
+        const fps = Number(this.fps.value)
+        const quality = Number(this.quality.value)
 
-      setProgress(0)
-      finishEncodingGIF(gif.bytesView())
+        this.fpsOutput.value = `${fps} fps`
+        this.qualityOutput.value = String(quality)
+      }
+
+      updateVideoSize() {
+        const width = Number(this.widthInput.value)
+        const height = Number(this.heightInput.value)
+        if (width > 0 && height > 0) {
+          this.preview.style.width = `${width}px`
+          this.preview.style.height = `${height}px`
+        } else {
+          this.preview.style.removeProperty('width')
+          this.preview.style.removeProperty('height')
+        }
+      }
+
+      async convert() {
+        if (!this.file || !this.metadataReady || this.worker) return
+
+        try {
+          this.hideError()
+          this.clearResult()
+          this.setBusy(true)
+          this.startProgress('Reading input file…')
+          const file = this.file
+          const worker = new Worker('./mp4-to-gif-worker.js')
+          this.worker = worker
+          worker.onmessage = event => this.handleWorkerMessage(event.data)
+          worker.onerror = event => this.failConversion(new Error(event.message || 'The conversion worker failed.'))
+          worker.onmessageerror = () => this.failConversion(new Error('The conversion worker returned an unreadable message.'))
+
+          const buffer = await file.arrayBuffer()
+          if (this.worker != worker) return
+
+          worker.postMessage({
+            type: 'convert',
+            buffer,
+            width: Number(this.widthInput.value),
+            height: Number(this.heightInput.value),
+            fps: Number(this.fps.value),
+            quality: Number(this.quality.value),
+          }, [buffer])
+        } catch (error) {
+          this.failConversion(error)
+        }
+      }
+
+      handleWorkerMessage(message) {
+        if (message.type == 'status') {
+          if (message.phase == 'loading') {
+            this.updateProgress(message.message, undefined, 20)
+          } else if (message.phase == 'decoding') {
+            this.updateProgress(message.message, undefined, 75)
+          } else if (message.phase == 'encoding') {
+            this.updateProgress(message.message, Math.max(this.progressValue, 78), 97)
+          }
+        } else if (message.type == 'progress') {
+          this.updateProgress(message.message, 15 + clamp(message.value, 0, 1) * 60, 75)
+        } else if (message.type == 'done') {
+          this.finishConversion(message)
+        } else if (message.type == 'error') {
+          this.failConversion(new Error(message.message))
+        }
+      }
+
+      startProgress(message) {
+        this.clearProgressTimer()
+        this.progressValue = 1
+        this.progressCeiling = 10
+        this.progressMessage = message
+        this.fileLabel.classList.add('progress')
+        this.renderProgress()
+        this.progressTimer = setInterval(() => {
+          if (this.progressValue < this.progressCeiling) {
+            const delta = Math.max(0.08, (this.progressCeiling - this.progressValue) * 0.06)
+            this.progressValue = Math.min(this.progressCeiling, this.progressValue + delta)
+            this.renderProgress()
+          }
+        }, 160)
+      }
+
+      updateProgress(message, value = undefined, ceiling = undefined) {
+        this.progressMessage = message
+        if (value != null) this.progressValue = Math.max(this.progressValue, value)
+        if (ceiling != null) this.progressCeiling = Math.max(this.progressValue, ceiling)
+        this.renderProgress()
+      }
+
+      renderProgress() {
+        this.fileLabel.style.setProperty('--progress', `${this.progressValue}%`)
+        this.setFileLabel(`${this.progressMessage} ${Math.floor(this.progressValue)}%`)
+      }
+
+      completeProgress() {
+        this.clearProgressTimer()
+        this.progressValue = 100
+        this.progressMessage = 'Done.'
+        this.renderProgress()
+        const file = this.file
+        this.completionTimer = setTimeout(() => {
+          if (this.file == file && !this.worker) this.clearProgress()
+        }, 700)
+      }
+
+      clearProgress() {
+        this.clearProgressTimer()
+        this.fileLabel.classList.remove('progress')
+        this.fileLabel.style.removeProperty('--progress')
+        this.progressValue = 0
+        this.progressCeiling = 0
+        this.progressMessage = ''
+        this.setFileLabel(this.fileSummary || 'Drop an MP4 here or choose a file.')
+      }
+
+      clearProgressTimer() {
+        if (this.progressTimer) clearInterval(this.progressTimer)
+        if (this.completionTimer) clearTimeout(this.completionTimer)
+        this.progressTimer = undefined
+        this.completionTimer = undefined
+      }
+
+      setFileLabel(text) {
+        this.fileLabelText.textContent = text
+      }
+
+      finishConversion(message) {
+        const blob = new Blob([message.buffer], { type: 'image/gif' })
+        this.clearResult()
+        this.outputBlob = blob
+        this.outputUrl = URL.createObjectURL(blob)
+        this.output.width = message.width
+        this.output.height = message.height
+        this.output.src = this.outputUrl
+        this.resultInfo.textContent = `${message.width}×${message.height} · ${message.frameCount} frames · ${prettySize(blob.size)}`
+        this.resultSection.hidden = false
+        this.stopWorker()
+        this.setBusy(false)
+        this.completeProgress()
+      }
+
+      failConversion(error) {
+        this.stopWorker()
+        this.setBusy(false)
+        this.clearProgress()
+        this.showError(error)
+      }
+
+      cancel(showMessage = true) {
+        if (!this.worker) return
+        this.stopWorker()
+        this.setBusy(false)
+        this.clearProgress()
+        if (showMessage) this.showError(new Error('Conversion cancelled.'))
+      }
+
+      setBusy(busy) {
+        this.scale.disabled = busy
+        this.widthInput.disabled = busy
+        this.heightInput.disabled = busy
+        this.fps.disabled = busy
+        this.quality.disabled = busy
+        this.convertButton.disabled = busy || !this.metadataReady
+        this.cancelButton.hidden = !busy
+      }
+
+      stopWorker() {
+        this.worker?.terminate()
+        this.worker = undefined
+      }
+
+      download() {
+        if (!this.outputUrl) return
+        const link = document.createElement('a')
+        link.href = this.outputUrl
+        link.download = this.file.name.replace(/\.[^.]*$/, '') + '.gif'
+        link.click()
+      }
+
+      async openInGifViewer() {
+        if (!this.outputBlob) return
+
+        const viewer = window.open('about:blank', '_blank')
+        this.openGifViewerButton.disabled = true
+        try {
+          const name = this.file.name.replace(/\.[^.]*$/, '') + '.gif'
+          const key = await gifTransfer.put(this.outputBlob, name)
+          const url = new URL('./gif.html', location.href)
+          url.searchParams.set('transfer', key)
+          if (viewer) viewer.location.replace(url)
+          else location.href = url
+        } catch (error) {
+          viewer?.close()
+          this.showError(error)
+        } finally {
+          this.openGifViewerButton.disabled = false
+        }
+      }
+
+      clearResult() {
+        if (this.outputUrl) URL.revokeObjectURL(this.outputUrl)
+        this.outputUrl = undefined
+        this.outputBlob = undefined
+        this.output.removeAttribute('src')
+        this.output.removeAttribute('width')
+        this.output.removeAttribute('height')
+        this.resultSection.hidden = true
+      }
+
+      showError(error) {
+        this.errorText.textContent = error instanceof Error ? error.message : String(error)
+        this.error.hidden = false
+      }
+
+      hideError() {
+        this.error.hidden = true
+      }
+
+      dispose() {
+        this.stopWorker()
+        this.clearProgressTimer()
+        if (this.sourceUrl) URL.revokeObjectURL(this.sourceUrl)
+        if (this.outputUrl) URL.revokeObjectURL(this.outputUrl)
+      }
     }
 
-    function finishEncodingGIF(buffer) {
-      const blob = new Blob([buffer], { type: 'image/gif'})
-      $output.src = URL.createObjectURL(blob)
-      $download.hidden = false
-      $download.disabled = false
-      $download.textContent = `Download (${prettySize(blob.size)})`
+    function preventEvent(event) {
+      event.stopPropagation()
+      if (event.cancelable) event.preventDefault()
     }
 
-    function prettySize(number) {
-      const UNITS = ['B', 'kB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB'];
-      const exponent = Math.min(Math.floor(Math.log10(number) / 3), UNITS.length - 1);
-      number /= 1000 ** exponent;
-      number = number.toPrecision(3);
-      return number + ' ' + UNITS[exponent];
+    function isFilesDragEvent(event) {
+      return event.dataTransfer?.types?.includes('Files')
     }
 
-    $download.onclick = function downloadGIF() {
-      const a = document.createElement('a')
-      a.href = $output.src
-      a.download = 'output.gif'
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
+    function clamp(value, min, max) {
+      return Math.min(max, Math.max(min, value))
+    }
+
+    function prettySize(bytes) {
+      const units = ['B', 'kB', 'MB', 'GB']
+      const exponent = Math.min(Math.floor(Math.log10(Math.max(1, bytes)) / 3), units.length - 1)
+      return `${(bytes / 1000 ** exponent).toPrecision(3)} ${units[exponent]}`
+    }
+
+    function formatDuration(seconds) {
+      const minutes = Math.floor(seconds / 60)
+      const remainder = seconds - minutes * 60
+      return `${minutes}:${remainder.toFixed(1).padStart(4, '0')}`
+    }
+
+    if (!window.VideoDecoder || !window.OffscreenCanvas || !window.Worker) {
+      document.querySelector('#not-supported').hidden = false
+      document.querySelector('#content').hidden = true
+    } else {
+      new Mp4ToGifApp()
     }
   </script>
 </body>
