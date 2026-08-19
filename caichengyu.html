@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>猜成语辅助工具</title>
+	<style>
+		.content {
+			display: grid;
+			grid-template-columns: auto 1fr;
+			grid-gap: 8px;
+			align-items: center;
+			font-family: monospace;
+			font-size: 18px;
+		}
+		.license {
+			margin: auto 5% 0;
+			padding: 2rem 0 1rem;
+			font-size: 0.8rem;
+		}
+		label:has(+output) {
+			align-self: start;
+		}
+		output {
+			padding: 1px 2px;
+			white-space: pre;
+		}
+	</style>
+</head>
+<body>
+	<h1 class="title">猜成语辅助工具</h1>
+	<section class="content">
+		<label for="$input">查询</label>
+		<input id="$input" class="input" placeholder="部分拼音，声调 (12345) 或 X, 例如 b1shiXX2" autocomplete="off" spellcheck="false" autofocus disabled>
+		<label for="$output">结果</label>
+		<output id="$output">Loading...</output>
+	</section>
+
+	<footer class="license">
+		成语数据来自
+		<a href="https://github.com/pwxcoo/chinese-xinhua" rel="noreferrer" target="_blank">pwxcoo/chinese-xinhua</a> 和
+		<a href="https://github.com/Li1Fan/chinese-idiom" rel="noreferrer" target="_blank">Li1Fan/chinese-idiom</a>
+	</footer>
+
+	<script type="module">
+		let text = '', pattern = /()/, start = 0, raf = 0, t0 = 0, count = 0
+
+		const idioms = [], step = 2000
+		// '一丁不识\tyi1ding1bu4shi2\n' 目前有 43k+ 数据，做成每帧查 2k 条不到 1 秒
+		const data = await fetch('caichengyu.txt').then(r => r.text()).then(t => t.trimEnd().split(/[\t\n]/g))
+		for (let i = 0, n = data.length; i + 1 < data.length; i += 2) {
+			const word = data[i]
+			const tone3 = data[i + 1]
+			idioms.push([word, tone3])
+		}
+		$input.disabled = false
+		$output.value = ''
+		$input.oninput = function update() {
+			text = this.value.trim()
+			history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+			cancelAnimationFrame(raf)
+			if (text) {
+				if (/^(?:[a-z]*[1-5X])+$/.test(text)) {
+					start = count = 0
+					t0 = Date.now()
+					pattern = makePattern(text)
+					$output.value = ''
+					raf = requestAnimationFrame(caichengyu)
+				} else {
+					$output.value = '查询参数不合法, 合法参数例如 b1shiXX2'
+				}
+			} else {
+				$output.value = '请输入查询参数, 例如 b1shiXX2'
+			}
+		}
+		const query = new URL(location.href).searchParams
+		$input.value = query.get('q') || ''
+		$input.dispatchEvent(new InputEvent('input'))
+
+		function caichengyu() {
+			for (let i = start; i < start + step && i < idioms.length; i++) {
+				const [word, tone3] = idioms[i]
+				if (pattern.test(tone3)) {
+					$output.appendChild(document.createTextNode(`${word}\t${tone3.replace(/(\d)(\w)/g, '$1 $2')}\n`))
+					count++
+					if (count >= 100) {
+						$output.appendChild(document.createTextNode('[TRUNCATED]'))
+						return
+					}
+				}
+			}
+			if (start + step < idioms.length) {
+				raf = requestAnimationFrame(caichengyu)
+				start += step
+			} else {
+				$output.appendChild(document.createTextNode('[DONE]'))
+			}
+		}
+
+		function makePattern(text) {
+			let pattern = ''
+			for (let [, pinyin, tone] of text.matchAll(/([a-z]*)([1-5X])/g)) {
+				tone = tone === 'X' ? '[1-5]' : tone
+				if (pinyin) {
+					pattern += `[a-z]*${pinyin}[a-z]*${tone}`
+				} else {
+					pattern += `[a-z]+${tone}`
+				}
+			}
+			return new RegExp(`^${pattern}$`)
+		}
+	</script>
+</body>
+</html>

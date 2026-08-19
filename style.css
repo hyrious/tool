@@ -12,6 +12,7 @@ body {
   background-color: var(--back);
   color: var(--front);
   transition: background-color 2s, color 1s;
+  text-autospace: normal;
 }
 
 input {

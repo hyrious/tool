@@ -49,6 +49,9 @@
         root.style.setProperty(`--${k}`, colors[v]);
       }
     }
+    for (const [k, v] of Object.entries(colors)) {
+      root.style.setProperty(`--${k}`, v);
+    }
   }
   updateTheme(prefersDarkMediaQueryList);
   prefersDarkMediaQueryList.addListener(updateTheme);
