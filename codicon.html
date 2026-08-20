@@ -168,7 +168,7 @@
     let exactStyle = null
     $search.oninput = function update() {
       let text = this.value.trim()
-      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
       let i = text.indexOf('~'), modifier = ''
       if (i >= 0) {
         modifier = ` codicon-modifier-${text.slice(i + 1)}`

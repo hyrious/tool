@@ -32,7 +32,7 @@
   <script>
     $package_name.oninput = function save() {
       var text = this.value.trim()
-      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
     }
 
     $fetch.onclick = function main() {

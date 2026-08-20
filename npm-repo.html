@@ -69,7 +69,7 @@
       $('#repo').value = $('#pattern').value = $('#tags').textContent = '...'
       t = setTimeout(main, 400)
       const text = this.value.trim()
-      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
     }
 
     async function main() {

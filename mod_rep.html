@@ -149,7 +149,7 @@
 
       $filter.oninput = function update() {
         let text = this.value.trim()
-        history.replaceState({ q: text }, '', text ? '?q=' + text : location.pathname)
+        history.replaceState({ q: text }, '', text ? '?q=' + encodeURIComponent(text) : location.pathname)
         doSearch(text)
       }
 

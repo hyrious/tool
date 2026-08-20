@@ -133,7 +133,7 @@
 
     function refresh_location() {
       let replacement = ''
-      if ($id.value           ) replacement += '&q='       + $id.value;
+      if ($id.value           ) replacement += '&q='       + encodeURIComponent($id.value);
       if ($hash.value != 'md5') replacement += '&hash='    + $hash.value;
       if ($padding.value != 12) replacement += '&padding=' + $padding.value;
       if ($size.value    != 16) replacement += '&size='    + $size.value;

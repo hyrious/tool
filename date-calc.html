@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>Date Calculator</title>
+	<style>
+		textarea {
+			display: block;
+			width: stretch;
+			color: var(--front);
+			border-color: var(--control);
+			background: transparent;
+			padding: .5em;
+			font: 18px / 24px monospace;
+			resize: none;
+			field-sizing: content;
+		}
+		output {
+			display: block;
+			width: stretch;
+			padding: .5em 0;
+			font: 18px / 24px monospace;
+		}
+		output::before {
+			content: '= ';
+		}
+		pre {
+			font-size: 80%;
+			margin: 0;
+			padding: .5em .8em;
+			background-color: var(--control);
+			line-height: 1.5;
+			overflow: auto;
+		}
+		.code {
+			margin-bottom: 1em;
+		}
+	</style>
+</head>
+<body>
+	<h1 class="title">Date Calculator</h1>
+	<section class="content">
+		<textarea id="$input" rows="1" placeholder="e.g. today - 114514 days" autocomplete="off" spellcheck="false" autofocus></textarea>
+		<output id="$output"></output>
+		<pre id="$code" class="code" hidden></pre>
+		<pre id="$grammar"># Grammar
+Expr      = ('+' | '-') Expr
+          | '(' Expr ')'
+          | Expr ('+' | '-') Expr
+          | TimePoint
+          | Duration
+TimePoint = 'today'
+          | 'now'
+          | "1787213715387"       # Instant
+          | "YYYY-MM-DD HH:mm:ss" # PlainDateTime
+          | "YYYY-MM-DD"          # PlainDate
+          | "YYYY-MM"             # PlainYearMonth
+          | "MM-DD"               # PlainMonthDay
+          | "HH:mm:ss"            # PlainTime
+Duration  = "±PnYnMnWnDTnHnMnS"   # ISO8601 duration format
+          | "n years and m days"  # Units may be abbreviated, e.g. 5 ms
+</pre>
+	</section>
+	<script type="module">
+		const units = {
+			y: 'years', yr: 'years', yrs: 'years', year: 'years', years: 'years',
+			mo: 'months', mos: 'months', month: 'months', months: 'months',
+			w: 'weeks', week: 'weeks', weeks: 'weeks', d: 'days', day: 'days', days: 'days',
+			h: 'hours', hr: 'hours', hrs: 'hours', hour: 'hours', hours: 'hours',
+			min: 'minutes', mins: 'minutes', minute: 'minutes', minutes: 'minutes',
+			s: 'seconds', sec: 'seconds', secs: 'seconds', second: 'seconds', seconds: 'seconds',
+			ms: 'milliseconds', millisecond: 'milliseconds', milliseconds: 'milliseconds',
+			us: 'microseconds', µs: 'microseconds', microsecond: 'microseconds', microseconds: 'microseconds',
+			ns: 'nanoseconds', nanosecond: 'nanoseconds', nanoseconds: 'nanoseconds'
+		}
+		const unitPattern = Object.keys(units).sort((a, b) => b.length - a.length).join('|')
+		const durationPart = new RegExp(`(\\d+)\\s+(${unitPattern})\\b`, 'y')
+
+		$input.oninput = update
+		const query = new URL(location.href).searchParams
+		$input.value = query.get('q') || ''
+		$input.dispatchEvent(new InputEvent('input'))
+
+		const template = $grammar.textContent
+		setInterval(() => {
+			$grammar.textContent = template.replace('1787213715387', String(Date.now()))
+			if (/\bnow\b/.test($input.value)) update()
+		}, 500)
+
+		function update(event) {
+			const text = $input.value.trim()
+			if (event) history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
+			$output.value = ''
+			$code.hidden = true
+			if (!text) {
+				$output.value = 'Try today + 2 months and 3 days'
+				return
+			}
+			if (!globalThis.Temporal) {
+				$output.value = 'Error: Temporal is not supported by this browser'
+				return
+			}
+			try {
+				const code = compile(text)
+				$code.textContent = `# Temporal\n${code}`
+				$code.hidden = false
+				$output.value = evaluate(code).toString()
+			} catch (error) {
+				$output.value = `${error.name}: ${error.message}`
+			}
+		}
+
+		function compile(text) {
+			const tokens = lex(text)
+			let index = 0
+			const bindingPower = { '+': 1, '-': 1 }
+			const peek = () => tokens[index]
+			const next = () => tokens[index++]
+			const expect = type => {
+				const token = next()
+				if (token.type !== type) fail(`Expected ${JSON.stringify(type)}`, token.start)
+				return token
+			}
+			function parse(min = 0) {
+				const token = next()
+				let left
+				if (token.type === 'value') {
+					left = token.code
+				} else if (token.type === '(') {
+					left = parse()
+					expect(')')
+				} else if (token.type === '+' || token.type === '-') {
+					left = `${token.type === '+' ? 'pos' : 'neg'}(${parse(2)})`
+				} else {
+					fail('Expected a value', token.start)
+				}
+				while (bindingPower[peek().type] != null && bindingPower[peek().type] >= min) {
+					const operator = next()
+					const right = parse(bindingPower[operator.type] + 1)
+					left = `${operator.type === '+' ? 'add' : 'sub'}(${left},${right})`
+				}
+				return left
+			}
+			const code = parse()
+			expect('eof')
+			return code
+		}
+
+		function lex(text) {
+			const tokens = []
+			let i = 0
+			while (i < text.length) {
+				if (/\s/.test(text[i])) { i++; continue }
+				const start = i, rest = text.slice(i)
+				let match, code
+				if ((match = /^(today|now)\b/.exec(rest))) {
+					code = match[1] === 'today' ? 'Temporal.Now.plainDateISO()' : 'Temporal.Now.zonedDateTimeISO()'
+				} else if ((match = /^P[0-9YMWDTHMS.]+\b/.exec(rest))) {
+					code = `Temporal.Duration.from(${JSON.stringify(match[0])})`
+				} else if ((match = naturalDuration(text, i))) {
+					code = `Temporal.Duration.from(${JSON.stringify(match.value)})`
+				} else if ((match = /^\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:\.\d{1,9})?/.exec(rest))) {
+					code = `Temporal.PlainDateTime.from(${JSON.stringify(match[0].replace(' ', 'T'))})`
+				} else if ((match = /^\d{4}-\d\d-\d\d/.exec(rest))) {
+					code = `Temporal.PlainDate.from(${JSON.stringify(match[0])})`
+				} else if ((match = /^\d{4}-\d\d/.exec(rest))) {
+					code = `Temporal.PlainYearMonth.from(${JSON.stringify(match[0])})`
+				} else if ((match = /^\d\d-\d\d/.exec(rest))) {
+					code = `Temporal.PlainMonthDay.from(${JSON.stringify(match[0])})`
+				} else if ((match = /^\d\d:\d\d:\d\d(?:\.\d{1,9})?/.exec(rest))) {
+					code = `Temporal.PlainTime.from(${JSON.stringify(match[0])})`
+				} else if ((match = /^\d+/.exec(rest))) {
+					const value = Number(match[0])
+					if (!Number.isSafeInteger(value)) fail('Timestamp is not a safe integer', start)
+					code = `Temporal.Instant.fromEpochMilliseconds(${value})`
+				} else if ('+-()'.includes(text[i])) {
+					tokens.push({ type: text[i], start: i++ })
+					continue
+				} else {
+					fail(`Unexpected ${JSON.stringify(text[i])}`, i)
+				}
+				tokens.push({ type: 'value', code, start })
+				i += match[0].length
+			}
+			tokens.push({ type: 'eof', start: i })
+			return tokens
+		}
+
+		function naturalDuration(text, start) {
+			const value = {}
+			let end = start, found = false
+			while (true) {
+				durationPart.lastIndex = end
+				const part = durationPart.exec(text)
+				if (!part) break
+				const unit = units[part[2]], amount = Number(part[1])
+				if (!Number.isSafeInteger(amount)) fail('Duration is not a safe integer', end)
+				value[unit] = (value[unit] || 0) + amount
+				found = true
+				const previous = durationPart.lastIndex
+				const connector = /\s+(?:and\s+)?/y
+				connector.lastIndex = previous
+				const space = connector.exec(text)
+				end = space ? connector.lastIndex : previous
+				durationPart.lastIndex = end
+				if (!durationPart.test(text)) { end = previous; break }
+			}
+			return found ? { 0: text.slice(start, end), length: 1, value } : null
+		}
+
+		function evaluate(code) {
+			return Function('Temporal', 'add', 'sub', 'pos', 'neg', `"use strict";return(${code})`)(Temporal, add, sub, pos, neg)
+		}
+
+		function add(a, b) {
+			if (isDuration(a) && isDuration(b)) return a.add(b)
+			if (isTimePoint(a) && isDuration(b) && typeof a.add === 'function') return a.add(b)
+			if (isDuration(a) && isTimePoint(b) && typeof b.add === 'function') return b.add(a)
+			throw new TypeError(`Cannot add ${name(a)} and ${name(b)}`)
+		}
+
+		function sub(a, b) {
+			if (isDuration(a) && isDuration(b)) return a.subtract(b)
+			if (isTimePoint(a) && isDuration(b) && typeof a.subtract === 'function') return a.subtract(b)
+			if (isTimePoint(a) && isTimePoint(b) && a.constructor === b.constructor && typeof a.since === 'function') return a.since(b)
+			throw new TypeError(`Cannot subtract ${name(b)} from ${name(a)}`)
+		}
+
+		function pos(value) {
+			if (isDuration(value)) return value
+			throw new TypeError(`Cannot apply + to ${name(value)}`)
+		}
+
+		function neg(value) {
+			if (isDuration(value)) return value.negated()
+			throw new TypeError(`Cannot apply - to ${name(value)}`)
+		}
+
+		function isDuration(value) {
+			return value instanceof Temporal.Duration
+		}
+
+		function isTimePoint(value) {
+			return [Temporal.Instant, Temporal.ZonedDateTime, Temporal.PlainDateTime, Temporal.PlainDate,
+				Temporal.PlainTime, Temporal.PlainYearMonth, Temporal.PlainMonthDay].some(Type => value instanceof Type)
+		}
+
+		function name(value) {
+			return value?.[Symbol.toStringTag]?.replace('Temporal.', '') || value?.constructor?.name || typeof value
+		}
+
+		function fail(message, position) {
+			throw new SyntaxError(`${message} at column ${position + 1}`)
+		}
+	</script>
+</body>
+</html>

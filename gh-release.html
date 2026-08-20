@@ -176,9 +176,9 @@
 
     $form.oninput = function refresh_location() {
       let replacement = ''
-      if ($repos.value)    replacement += '&q=' + $repos.value.replace(/[,\s]+/g, ',');
+      if ($repos.value)    replacement += '&q=' + encodeURIComponent($repos.value.replace(/[,\s]+/g, ','));
       if ($interval.value) replacement += '&i=' + $interval.value;
-      if ($filter.value)   replacement += '&f=' + $filter.value;
+      if ($filter.value)   replacement += '&f=' + encodeURIComponent($filter.value);
       history.replaceState({ q: $repos.value }, '', replacement ? replacement.replace('&', '?') : location.pathname)
     }
 

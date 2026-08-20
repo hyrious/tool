@@ -99,7 +99,7 @@
       const text = $hex.value.replace(/\s+/g, '')
       if (!/^[0-9a-f]*$/i.test(text)) return clear();
 
-      history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+      history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
       if (text.length & 1) return clear();
       const array = new Uint8Array(text.length >> 1)
       for (let i = 0; i < text.length; i += 2) {

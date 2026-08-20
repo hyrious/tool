@@ -62,7 +62,7 @@
       let n = $times.value.trim()
       let query = ''
       if (text != 'Azogi') {
-        query += '&q=' + text
+        query += '&q=' + encodeURIComponent(text)
       }
       if (n > 1) {
         query += '&n=' + n

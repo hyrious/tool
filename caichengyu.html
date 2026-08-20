@@ -60,7 +60,7 @@
 		$output.value = ''
 		$input.oninput = function update() {
 			text = this.value.trim()
-			history.replaceState({ q: text }, "", text ? '?q=' + text : location.pathname)
+			history.replaceState({ q: text }, "", text ? '?q=' + encodeURIComponent(text) : location.pathname)
 			cancelAnimationFrame(raf)
 			if (text) {
 				if (/^(?:[a-z]*[1-5X])+$/.test(text)) {
