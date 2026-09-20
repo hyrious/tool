@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>中国节假日日历</title>
+	<style>
+		.content {
+			--weekend: light-dark(var(--blue), var(--aqua));
+			--holiday: color-mix(in srgb, var(--weekend) 50%, transparent);
+			--working: var(--orange);
+		}
+		.years {
+			width: 366px;
+			display: flex;
+			justify-content: center;
+			gap: 5px;
+		}
+		.years > label {
+			border-bottom: 2px solid transparent;
+			cursor: pointer;
+			> input[type=radio] { display: none; }
+			&:hover, &:has(:checked) { border-bottom-color: currentColor; }
+		}
+		.years,
+		.weeks {
+			margin-bottom: 10px;
+		}
+		.weeks,
+		.days {
+			--cell: 48px;
+			display: grid;
+			grid-template-columns: repeat(7, var(--cell));
+			justify-items: center;
+		}
+		.weeks {
+			position: sticky;
+			top: 0;
+			background-color: var(--back);
+			z-index: 10;
+		}
+		.days > span {
+			line-height: var(--cell);
+			width: var(--cell);
+			height: var(--cell);
+			text-align: center;
+			border: 1px solid transparent;
+			position: relative;
+		}
+		.sep0.sep0 {
+			border-left-color: var(--front);
+		}
+		.sep1.sep1 {
+			border-top-color: var(--front);
+		}
+		.sep2.sep2 {
+			border-bottom-color: var(--front);
+		}
+		.days {
+			counter-reset: month;
+		}
+		.sep0 {
+			counter-increment: month;
+		}
+		.sep1:not(:has(+ .sep1:not(.sep0)))::after {
+			content: counter(month) "月";
+			line-height: 1;
+			width: max-content;
+			position: absolute;
+			left: 100%;
+			top: 0;
+			padding: 0 5px;
+			color: var(--front);
+		}
+		.weekend {
+			color: var(--weekend);
+		}
+		.holiday {
+			color: var(--weekend);
+			background-color: var(--holiday);
+		}
+		.working {
+			color: var(--working);
+			&:after {
+				content: '班';
+				position: absolute;
+				top: 15%;
+				right: 10%;
+				line-height: 1;
+				font-size: 80%;
+			}
+		}
+		.memo::before {
+			content: attr(data-memo);
+			width: max-content;
+			line-height: 1.25;
+			text-align: left;
+			white-space: pre;
+			position: absolute;
+			left: calc(100% + 48px);
+			top: 0;
+			color: var(--weekend);
+		}
+		.today.today.today:not(:hover) {
+			background-color: var(--front);
+			color: var(--back);
+		}
+	</style>
+</head>
+<body>
+	<h1 class="title">中国节假日日历</h1>
+	<section class="content">
+		Loading...
+	</section>
+	<script type="module">
+		const $ = (a, b) => a.nodeType == 1 ? a.querySelector(b) : document.querySelector(a)
+		const h = (tag, attrs = {}) => Object.assign(document.createElement(tag), attrs)
+		const A = (parent, child) => parent.appendChild(child)
+
+		// { 2026: [{ Name: '元旦', StartDate: '2026-01-01', EndDate, Duration: 3, CompDays: ['2026-01-04'], URL, Memo }] }
+		let Years = null
+		fetch('https://cdn.jsdelivr.net/gh/lanceliao/china-holiday-calender/holidayAPI.json')
+			.then(r => r.json())
+			.then(json => { Years = json.Years; init() })
+
+		let $content = $('.content')
+		let $years = h('div', { className: 'years' })
+		let $weeks = h('header', { className: 'weeks' })
+		A($weeks, h('span', { textContent: '一' }))
+		A($weeks, h('span', { textContent: '二' }))
+		A($weeks, h('span', { textContent: '三' }))
+		A($weeks, h('span', { textContent: '四' }))
+		A($weeks, h('span', { textContent: '五' }))
+		A($weeks, h('span', { textContent: '六' }))
+		A($weeks, h('span', { textContent: '日' }))
+		let $days = h('article', { className: 'days' })
+
+		function init() {
+			$content.textContent = ''
+			A($content, $years)
+			A($content, $weeks)
+			A($content, $days)
+
+			$years.textContent = ''
+			let last = null
+			for (const year in Years) {
+				const $label = h('label')
+				last = A($label, h('input', { type: 'radio', name: 'year', value: year }))
+				A($years, $label).append(year)
+			}
+			if (!last) return;
+			last.checked = true;
+
+			$years.onchange = update
+			update()
+		}
+
+		function update() {
+			const year = +$($years, ':checked').value
+			const holidays = Years[year]
+			const oneDay = Temporal.Duration.from({ days: 1 })
+			console.log(holidays)
+
+			$days.textContent = ''
+			let date = Temporal.PlainDate.from({ year, month: 1, day: 1 })
+			let firstDayOffset = date.dayOfWeek - 1
+			for (let i = firstDayOffset; i >= 1; i--) {
+				let d = date.add(Temporal.Duration.from({ days: -i }))
+				let $cell = A($days, h('span', { textContent: d.day }))
+				$cell.dataset.date = d.toString()
+				$cell.__date = d
+				if (d.dayOfWeek == 6 || d.dayOfWeek == 7) {
+					$cell.classList.add('weekend')
+				}
+			}
+			while (date.year == year) {
+				let $cell = A($days, h('span', { textContent: date.day }))
+				$cell.dataset.date = date.toString()
+				$cell.__date = date
+				if (date.dayOfWeek == 6 || date.dayOfWeek == 7) {
+					$cell.classList.add('weekend')
+				}
+				date = date.add(oneDay)
+			}
+
+			for (const $cell of $days.querySelectorAll('[data-date$="-01"]')) {
+				let tmp = $cell
+				tmp.classList.add('sep0')
+				for (let i = 1; i < $cell.__date.dayOfWeek; i++) {
+					tmp = tmp.previousElementSibling
+					tmp.classList.add('sep2')
+				}
+				tmp = $cell
+				for (let i = 7; i >= $cell.__date.dayOfWeek; i--) {
+					tmp.classList.add('sep1')
+					tmp = tmp.nextElementSibling
+					if (!tmp) break;
+				}
+			}
+
+			for (const { Name, StartDate, Duration, CompDays, Memo } of holidays) {
+				for (let date = Temporal.PlainDate.from(StartDate), i = 0; i < Duration; i++, date = date.add(oneDay)) {
+					$($days, `[data-date="${date}"]`).classList.add('holiday')
+				}
+				for (let date of CompDays) {
+					const $cell = $($days, `[data-date="${date}"]`)
+					$cell.classList.add('working')
+					$cell.classList.remove('weekend')
+				}
+				let date = Temporal.PlainDate.from(StartDate)
+				while (date.dayOfWeek < 7) date = date.add(oneDay);
+				let $end = $($days, `[data-date="${date}"]`)
+				$end.classList.add('memo')
+				$end.dataset.name = Name
+				$end.dataset.memo = Memo.replace(/^\S、/, '').replaceAll('。', '。\n')
+			}
+
+			const $today = $($days, `[data-date="${Temporal.Now.plainDateISO()}"]`)
+			$today.classList.add('today')
+			$today.scrollIntoView({ block: 'center' })
+		}
+	</script>
+</body>
+</html>
