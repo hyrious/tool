@@ -219,8 +219,10 @@
 			}
 
 			const $today = $($days, `[data-date="${Temporal.Now.plainDateISO()}"]`)
-			$today.classList.add('today')
-			$today.scrollIntoView({ block: 'center' })
+			if ($today) {
+				$today.classList.add('today')
+				$today.scrollIntoView({ block: 'center' })
+			}
 		}
 	</script>
 </body>
