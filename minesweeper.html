@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="color-scheme" content="light dark">
+	<title>Minesweeper</title>
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💣</text></svg>">
+	<style>
+		html {
+			height: 100%;
+			--red:    #D94A4A;
+			--orange: #C96A20;
+			--yellow: #A08016;
+			--green:  #398650;
+			--teal:   #258579;
+			--cyan:   #1683A0;
+			--blue:   #4778CC;
+			--purple: #8B65C5;
+			--pink:   #C45191;
+		}
+		body {
+			font-size: 25px;
+			min-height: 100%;
+			margin: 0;
+			align-content: center;
+		}
+		select {
+			position: fixed;
+			top: 20px;
+			left: 20px;
+		}
+		button {
+			font-size: inherit;
+		}
+		main {
+			margin: 0 auto 36px;
+			width: max-content;
+		}
+		header {
+			margin: 0 auto 5px;
+			width: stretch;
+			display: flex;
+			align-items: center;
+			justify-content: space-between;
+			font-variant-numeric: tabular-nums;
+			> .count {
+				color: red;
+				font-family: ui-monospace, monospace;
+			}
+			> .face {
+				&:before { content: '🙂'; }
+				&.win:before { content: '😎'; }
+				&.lose:before { content: '😵'; }
+				&:active:before { content: '😮'; }
+			}
+		}
+		article {
+			display: grid;
+			gap: 2px;
+			> button { width: 25px; height: 25px; padding: 0; align-content: center; }
+			> button.num { font-family: ui-monospace, monospace; font-size: 18px; }
+			> button.num1:before { color: var(--blue); content: '1'; }
+			> button.num2:before { color: var(--green); content: '2'; }
+			> button.num3:before { color: var(--red); content: '3'; }
+			> button.num4:before { color: var(--purple); content: '4'; }
+			> button.num5:before { color: var(--teal); content: '5'; }
+			> button.num6:before { color: var(--cyan); content: '6'; }
+			> button.num7:before { color: var(--orange); content: '7'; }
+			> button.num8:before { color: var(--pink); content: '8'; }
+			> button[data-flag] { padding: 0; font-size: 16px; }
+			> button[data-flag="F"]:before { content: '🚩'; }
+			> button[data-flag="?"]:before { content: '❓'; }
+			> button.mine { padding: 0; font-size: 16px; }
+			> button.mine:before { content: '💣'; }
+			> button.boom { background-color: var(--red); border: none; border-radius: 2px; }
+			> button.boom:before { content: '💥'; }
+		}
+	</style>
+</head>
+<body>
+	<select id="$level">
+		<option value="9,9,10" selected>9x9, 10 💣</option>
+		<option value="16,16,40">16x16, 40 💣</option>
+		<option value="30,16,99">30x16, 99 💣</option>
+	</select>
+
+	<main>
+		<header>
+			<span class="count" id="$count">000</span>
+			<button class="face" id="$face"></button>
+			<span class="count" id="$seconds">000</span>
+		</header>
+		<article id="$board"></article>
+	</main>
+
+	<script type="module">
+		let board = [0] // mine indexes
+		let config = [0, 0, 0]
+		let level = $level.value
+		let isStarted = 0, t0 = 0
+		$level.oninput = e => {
+			if (!e.isTrusted) return;
+			if (!isStarted || confirm('Current game will lost, continue?')) {
+				level = $level.value
+				reset()
+			} else {
+				$level.value = level
+				return
+			}
+		}
+		$face.onclick = reset
+		$board.oncontextmenu = e => e.preventDefault()
+		function rowcol(index = 0) {
+			let [width, height] = config
+			return [index / width | 0, index % width]
+		}
+		function fromRowcol(row = 0, col = 0) {
+			let [width, height] = config
+			return row * width + col
+		}
+		function eachAround(index, callback, self = true) {
+			let [width, height] = config
+			let [row, col] = rowcol(index)
+			for (let r = Math.max(0, row - 1); r <= Math.min(height - 1, row + 1); r++) {
+				for (let c = Math.max(0, col - 1); c <= Math.min(width - 1, col + 1); c++) {
+					if (!self && r == row && c == col) continue;
+					callback(fromRowcol(r, c), r, c)
+				}
+			}
+		}
+		function numFor(index = 0) /* 0..8, 9 = mine */ {
+			if (board.includes(index)) return 9;
+			let n = 0
+			eachAround(index, e => {
+				if (board.includes(e)) n++;
+			})
+			return n
+		}
+		function elementOf(index) {
+			return document.querySelector(`button[data-index="${index}"]`)
+		}
+		function reset() {
+			clearInterval(isStarted); isStarted = 0
+			let [width, height, mines] = config = level.split(',').map(e => Number.parseInt(e))
+			$count.textContent = String(mines).padStart(3, '0')
+			$face.className = 'face'
+			$board.replaceChildren()
+			$board.inert = false
+			$board.style.gridTemplateColumns = `repeat(${width}, 1fr)`
+			for (let i = width * height; i > 0; i--) {
+				let $cell = $board.appendChild(document.createElement('button'))
+				$cell.dataset.index = width * height - i
+				$cell.onclick = openCell
+				$cell.oncontextmenu = toggleFlag
+				$cell.onkeydown = moveFocus
+			}
+		}
+		function moveFocus(e) {
+			let [width, height, mines] = config
+			let cell = Number.parseInt(e.target.dataset.index)
+			switch (e.key) {
+			case 'ArrowLeft': cell--; break;
+			case 'ArrowRight': cell++; break;
+			case 'ArrowUp': cell -= width; break;
+			case 'ArrowDown': cell += width; break;
+			default: return;
+			}
+			if (cell < 0) cell += width * height;
+			if (cell >= width * height) cell -= width * height;
+			elementOf(cell)?.focus()
+		}
+		function openCell(e) {
+			if (e.target.disabled) return
+			let [width, height, mines] = config
+			let cell = Number.parseInt(e.target.dataset.index)
+			isStarted ? doOpen(width, height, mines, cell, e) : start(width, height, mines, cell, e)
+		}
+		function start(width, height, mines, cell, e) {
+			// Make sure board[cell] and around 8 cells are 0, then randomly set mines.
+			let ban = [-1]
+			eachAround(cell, e => ban.push(e))
+			board.length = 0
+			let i = 0, max = width * height
+			while (i < mines) {
+				let x = Math.floor(Math.random() * max)
+				if (ban.includes(x) || board.includes(x)) continue;
+				board.push(x)
+				i++
+			}
+
+			clearInterval(isStarted)
+			t0 = 0
+			updateSeconds()
+			isStarted = setInterval(updateSeconds, 1000)
+
+			doOpen(width, height, mines, cell, e)
+		}
+		function updateSeconds() {
+			let t = t0++
+			$seconds.textContent = String(t).padStart(3, '0')
+		}
+		function toggleFlag(e) {
+			e.preventDefault()
+			if (e.target.disabled) return openCell2(e);
+			let [width, height, mines] = config
+			let cell = Number.parseInt(e.target.dataset.index)
+			let next = 'F'
+			switch (e.target.dataset.flag) {
+			case 'F': next = '?'; break;
+			case '?': next = ' '; break;
+			default: next = 'F';
+			}
+			e.target.dataset.flag = next;
+			let n = document.querySelectorAll('button[data-flag="F"]').length
+			$count.textContent = String(mines - n).padStart(3, '0')
+		}
+		function doOpen(width, height, mines, cell, e) {
+			if ($board.inert) return;
+			let result = numFor(cell)
+			if (result == 9) return gameOver(cell, e);
+			let $cell = e.target
+			if ($cell.classList.contains('num')) return;
+			$cell.disabled = true
+			$cell.dataset.flag = ''
+			$cell.classList.add('num')
+			$cell.classList.add('num' + result)
+			if (result == 0) openCell2(e);
+			checkGameSuccess()
+		}
+		function openCell2(e) {
+			let [width, height, mines] = config
+			let cell = Number.parseInt(e.target.dataset.index)
+			let flag = 0
+			eachAround(cell, e => {
+				if (e == cell) return;
+				let $el = elementOf(e)
+				if ($el && $el.dataset.flag == 'F') flag++;
+			})
+			if (flag >= numFor(cell)) {
+				eachAround(cell, e => {
+					if (e == cell) return;
+					let $el = elementOf(e)
+					if ($el) {
+						if ($el.dataset.flag == 'F') return;
+						doOpen(width, height, mines, e, { target: elementOf(e) })
+					}
+				})
+			}
+		}
+		function gameOver(cell, e) {
+			board.forEach(index => {
+				let $cell = elementOf(index)
+				if ($cell) {
+					$cell.classList.add('mine')
+					if (cell == index) {
+						$cell.classList.add('boom')
+					}
+				}
+			})
+			clearInterval(isStarted); isStarted = 0
+			$board.inert = true
+			$face.classList.add('lose')
+		}
+		function checkGameSuccess() {
+			let [width, height, mines] = config
+			for (let i = 0; i < width * height; i++) {
+				if (board.includes(i)) continue;
+				let $cell = elementOf(i)
+				if ($cell && !$cell.classList.contains('num')) return;
+			}
+			clearInterval(isStarted); isStarted = 0
+			let seconds = $seconds.textContent
+			alert(`Yon win! Time used: ${seconds}s`)
+			$board.inert = true
+			$face.classList.add('win')
+		}
+		reset()
+	</script>
+</body>
+</html>
