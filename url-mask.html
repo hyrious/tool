@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-Hans-CN">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="style.css">
+	<script src="favicon.js"></script>
+	<script src="theme.js"></script>
+	<title>URL Mask</title>
+	<style>
+		.content {
+			display: grid;
+			grid-gap: 8px;
+			font-family: monospace;
+			font-size: 18px;
+		}
+		.masks {
+			font-size: 16px;
+			tab-size: 16;
+		}
+	</style>
+</head>
+<body>
+	<h1 class="title">URL Mask</h1>
+	<section class="content">
+		<input id="$masked" class="input" placeholder="https[colon][slash][slash]demo[dot]example[dot]com" autocomplete="off" spellcheck="false" autofocus>
+		<input id="$plain" class="output" placeholder="https://demo.example.com" autocomplete="off" spellcheck="false">
+		<pre class="masks" id="$masks"></pre>
+	</section>
+	<script>
+		var masks = {
+			at: '@',
+			dot: '.',
+			colon: ':',
+			slash: '/',
+			hash: '#',
+			question: '?',
+			equal: '=',
+			amp: '&',
+			percent: '%',
+			plus: '+',
+			hyphen: '-',
+			underscore: '_',
+			comma: ',',
+			semicolon: ';',
+			space: ' ',
+			tilde: '~',
+			excl: '!',
+			dollar: '$',
+			star: '*',
+			quote: "'",
+			lparen: '(',
+			rparen: ')',
+		};
+
+		var decodeMap = {};
+		var encodeMap = {};
+		for (var name in masks) {
+			decodeMap['[' + name + ']'] = masks[name];
+			encodeMap[masks[name]] = '[' + name + ']';
+		}
+
+		// Longest first so that multi-char masks win over their prefixes.
+		var decodeKeys = Object.keys(decodeMap).sort((a, b) => b.length - a.length);
+		var encodeKeys = Object.keys(encodeMap).sort((a, b) => b.length - a.length);
+
+		function scan(s, keys, map) {
+			var t = '';
+			for (var i = 0; i < s.length;) {
+				var hit = null;
+				for (var key of keys) {
+					if (s.startsWith(key, i)) {
+						hit = key;
+						break;
+					}
+				}
+				if (hit) {
+					t += map[hit];
+					i += hit.length;
+				} else {
+					t += s[i];
+					i++;
+				}
+			}
+			return t;
+		}
+
+		function mask(s) {
+			return scan(s, encodeKeys, encodeMap);
+		}
+
+		function unmask(s) {
+			return scan(s, decodeKeys, decodeMap);
+		}
+
+		// Direction is decided per input event: a value carrying '[' is masked.
+		function convert(s) {
+			return s.includes('[') ? unmask(s) : mask(s);
+		}
+	</script>
+	<script>
+		var $masked = document.getElementById('$masked');
+		var $plain = document.getElementById('$plain');
+
+		$masked.oninput = function () {
+			$plain.value = convert($masked.value);
+		};
+
+		$plain.oninput = function () {
+			$masked.value = convert($plain.value);
+		};
+
+		$masked.onfocus = $plain.onfocus = function () {
+			this.select();
+		};
+
+		var $masks = document.getElementById('$masks');
+		for (var name in masks) {
+			var code = document.createElement('code');
+			code.textContent = '[' + name + ']\t' + masks[name];
+			$masks.appendChild(code);
+			$masks.appendChild(document.createTextNode('\n'));
+		}
+	</script>
+</body>
+</html>
