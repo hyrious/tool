@@ -47,7 +47,7 @@
 		<textarea id="$input" rows="1" placeholder="e.g. today - 114514 days" autocomplete="off" spellcheck="false" autofocus></textarea>
 		<output id="$output"></output>
 		<pre id="$code" class="code" hidden></pre>
-		<pre id="$grammar"># Grammar
+		<pre id="$grammar" tabindex="0"># Grammar
 Expr      = ('+' | '-') Expr
           | '(' Expr ')'
           | Expr ('+' | '-') Expr
@@ -87,6 +87,7 @@ Duration  = "±PnYnMnWnDTnHnMnS"   # ISO8601 duration format
 
 		const template = $grammar.textContent
 		setInterval(() => {
+			if (document.activeElement === $grammar) return
 			$grammar.textContent = template.replace('1787213715387', String(Date.now()))
 			if (/\bnow\b/.test($input.value)) update()
 		}, 500)
@@ -108,10 +109,21 @@ Duration  = "±PnYnMnWnDTnHnMnS"   # ISO8601 duration format
 				const code = compile(text)
 				$code.textContent = `# Temporal\n${code}`
 				$code.hidden = false
-				$output.value = evaluate(code).toString()
+				$output.value = format(evaluate(code), /\bnow\b/.test(text))
 			} catch (error) {
 				$output.value = `${error.name}: ${error.message}`
 			}
+		}
+
+		function format(value, realtime = false) {
+			if (!isDuration(value)) return value.toString()
+			const parts = []
+			for (const unit of new Set(Object.values(units))) {
+				if (realtime && ['milliseconds', 'microseconds', 'nanoseconds'].includes(unit)) continue
+				const amount = Math.abs(value[unit])
+				if (amount) parts.push(`${amount} ${amount === 1 ? unit.slice(0, -1) : unit}`)
+			}
+			return parts.length ? (value.sign < 0 ? '-' : '') + parts.join(' ') : '0 seconds'
 		}
 
 		function compile(text) {
@@ -158,7 +170,7 @@ Duration  = "±PnYnMnWnDTnHnMnS"   # ISO8601 duration format
 				const start = i, rest = text.slice(i)
 				let match, code
 				if ((match = /^(today|now)\b/.exec(rest))) {
-					code = match[1] === 'today' ? 'Temporal.Now.plainDateISO()' : 'Temporal.Now.zonedDateTimeISO()'
+					code = match[1] === 'today' ? 'Temporal.Now.plainDateISO()' : 'Temporal.Now.plainDateTimeISO()'
 				} else if ((match = /^P[0-9YMWDTHMS.]+\b/.exec(rest))) {
 					code = `Temporal.Duration.from(${JSON.stringify(match[0])})`
 				} else if ((match = naturalDuration(text, i))) {
