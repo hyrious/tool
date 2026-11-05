@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Walk Animation</title>
+<script src="favicon.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+  body { background: #202223; color: #b8bcbd; font-family: sans-serif; }
+  main { position: relative; width: 100%; height: 100%; }
+  canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+  main::after { content: ""; position: absolute; inset: 16px; border: 1px solid transparent; pointer-events: none; }
+  main.dragging::after { border-color: #a4adaa; }
+  main.error::after { border-color: #d98278; }
+  #error { position: absolute; top: 28px; left: 50%; transform: translateX(-50%); color: #d98278; pointer-events: none; }
+  button { display: grid; place-items: center; padding: 0; color: inherit; background: transparent; border: 0; cursor: pointer; touch-action: manipulation; }
+  button:focus-visible { outline: 1px solid #d9dfdc; outline-offset: 4px; }
+  #open { position: absolute; inset: 0; margin: auto; width: 72px; height: 72px; border: 1px dashed #646b68; border-radius: 8px; }
+  #open:hover { color: #fff; border-color: #c2cbc6; }
+  svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  nav { position: absolute; bottom: max(28px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+  nav button { width: 40px; height: 40px; border-radius: 4px; }
+  nav button:hover { background: #2e3230; }
+  nav button[aria-pressed="true"] { color: #eff4f1; background: #373d39; }
+  #settings { position: absolute; top: max(20px, env(safe-area-inset-top)); right: 24px; display: flex; align-items: center; gap: 8px; font-size: 14px; }
+  input:not([type="file"]) { width: 88px; padding: 6px 8px; border: 1px solid #646b68; border-radius: 4px; background: #202223; color: inherit; font: inherit; }
+  input:focus-visible { outline: 1px solid #d9dfdc; outline-offset: 2px; }
+  input[aria-invalid="true"] { border-color: #d98278; }
+  #rows { position: absolute; bottom: max(28px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%); font-size: 14px; }
+  [hidden] { display: none !important; }
+</style>
+<main id="stage">
+  <label id="settings">切分 <input id="grid" value="3x4" aria-label="切分列数 x 行数" title="正整数列数 x 行数，例如 3x4" spellcheck="false" autocomplete="off"></label>
+  <label id="rows" hidden>行 <input id="row" type="number" min="1" value="1" step="1" aria-label="动画行号"></label>
+  <canvas id="canvas" aria-label="行走动画"></canvas>
+  <svg id="error" viewBox="0 0 24 24" role="img" aria-label="图片加载失败" hidden><path d="m12 3 10 18H2L12 3Zm0 6v5m0 3h.01"/></svg>
+  <button id="open" aria-label="选择精灵图">
+    <svg viewBox="0 0 24 24"><path d="M12 4v12m-5-7 5-5 5 5M4 16v4h16v-4"/></svg>
+  </button>
+  <nav id="directions" aria-label="行走方向" hidden>
+    <button data-row="1" aria-label="向左" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
+    <button data-row="3" aria-label="向上" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m6 14 6-6 6 6"/></svg></button>
+    <button data-row="0" aria-label="向下" aria-pressed="true"><svg viewBox="0 0 24 24"><path d="m6 10 6 6 6-6"/></svg></button>
+    <button data-row="2" aria-label="向右" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="m10 6 6 6-6 6"/></svg></button>
+  </nav>
+  <input id="file" type="file" accept="image/*" hidden>
+</main>
+<script>
+  const stage = document.querySelector('#stage');
+  const canvas = document.querySelector('#canvas');
+  const context = canvas.getContext('2d');
+  const open = document.querySelector('#open');
+  const file = document.querySelector('#file');
+  const directions = document.querySelector('#directions');
+  const error = document.querySelector('#error');
+  const grid = document.querySelector('#grid');
+  const rows = document.querySelector('#rows');
+  const rowInput = document.querySelector('#row');
+  let columns = 3;
+  let rowCount = 4;
+  let sprite = null;
+  let row = 0;
+  let started = 0;
+  let request = 0;
+  let loadVersion = 0;
+
+  function draw(now) {
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    if (!sprite) return;
+    const width = Math.ceil(sprite.naturalWidth / columns);
+    const height = Math.ceil(sprite.naturalHeight / rowCount);
+    const density = window.devicePixelRatio || 1;
+    const availableScale = Math.min(canvas.width / density * 0.75 / width, (canvas.height / density - 120) / height);
+    const scale = Math.max(0.1, Math.min(4, availableScale >= 1 ? Math.floor(availableScale) : availableScale)) * density;
+    const targetWidth = Math.round(width * scale);
+    const targetHeight = Math.round(height * scale);
+    const frame = Math.floor((now - started) / 150);
+    const column = columns === 3 ? [1, 2, 1, 0][frame % 4] : frame % columns;
+    // Treat incomplete outer edges as transparent padding, preserving pixel size.
+    const sourceWidth = Math.min(width, sprite.naturalWidth - column * width);
+    const sourceHeight = Math.min(height, sprite.naturalHeight - row * height);
+    if (sourceWidth <= 0 || sourceHeight <= 0) return;
+    context.imageSmoothingEnabled = false;
+    context.drawImage(sprite, column * width, row * height, sourceWidth, sourceHeight,
+      Math.round((canvas.width - targetWidth) / 2), Math.round((canvas.height - targetHeight) / 2),
+      targetWidth * sourceWidth / width, targetHeight * sourceHeight / height);
+  }
+
+  function animate(now) {
+    draw(now);
+    request = requestAnimationFrame(animate);
+  }
+
+  function resize() {
+    const density = window.devicePixelRatio || 1;
+    canvas.width = Math.round(stage.clientWidth * density);
+    canvas.height = Math.round(stage.clientHeight * density);
+    draw(performance.now());
+  }
+
+  async function load(selected) {
+    if (!selected) return;
+    const version = ++loadVersion;
+    stage.classList.remove('error');
+    error.hidden = true;
+    const url = URL.createObjectURL(selected);
+    const candidate = new Image();
+    try {
+      candidate.src = url;
+      await candidate.decode();
+      if (version !== loadVersion) return;
+      sprite = candidate;
+      started = performance.now();
+      open.hidden = true;
+      updateControls();
+      cancelAnimationFrame(request);
+      request = requestAnimationFrame(animate);
+    } catch {
+      if (version === loadVersion) {
+        stage.classList.add('error');
+        error.hidden = false;
+      }
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
+  function setDirection(value) {
+    if (!Number.isInteger(value) || value < 0 || value >= rowCount) return;
+    row = value;
+    rowInput.value = row + 1;
+    for (const button of directions.children) {
+      button.setAttribute('aria-pressed', String(Number(button.dataset.row) === row));
+    }
+  }
+
+  function updateControls() {
+    directions.hidden = !sprite || rowCount !== 4;
+    rows.hidden = !sprite || rowCount === 4;
+    rowInput.max = rowCount;
+    setDirection(Math.min(row, rowCount - 1));
+  }
+
+  function setGrid(value) {
+    const match = /^(\d+)\s*x\s*(\d+)$/i.exec(value.trim());
+    const width = match ? Number(match[1]) : 0;
+    const height = match ? Number(match[2]) : 0;
+    const valid = Number.isSafeInteger(width) && width > 0 && Number.isSafeInteger(height) && height > 0;
+    grid.setAttribute('aria-invalid', String(!valid));
+    if (!valid) return false;
+    columns = width;
+    rowCount = height;
+    started = performance.now();
+    updateControls();
+    const query = columns === 3 && rowCount === 4 ? '' : '?' + columns + 'x' + rowCount;
+    history.replaceState(null, '', location.pathname + query + location.hash);
+    draw(started);
+    return true;
+  }
+
+  function restoreGrid() {
+    grid.value = location.search.slice(1) || '3x4';
+    if (!setGrid(grid.value)) {
+      grid.value = '3x4';
+      setGrid(grid.value);
+    }
+  }
+
+  grid.addEventListener('input', () => setGrid(grid.value));
+  grid.addEventListener('change', () => {
+    grid.value = columns + 'x' + rowCount;
+    grid.setAttribute('aria-invalid', 'false');
+  });
+  rowInput.addEventListener('input', () => setDirection(rowInput.valueAsNumber - 1));
+  rowInput.addEventListener('change', () => { rowInput.value = row + 1; });
+  window.addEventListener('popstate', restoreGrid);
+
+  open.addEventListener('click', () => file.click());
+  canvas.addEventListener('click', () => file.click());
+  file.addEventListener('change', () => { load(file.files[0]); file.value = ''; });
+  directions.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (button) setDirection(Number(button.dataset.row));
+  });
+  window.addEventListener('keydown', event => {
+    if (event.target instanceof HTMLInputElement || rowCount !== 4) return;
+    const rows = { ArrowDown: 0, ArrowLeft: 1, ArrowRight: 2, ArrowUp: 3 };
+    if (event.key in rows) { event.preventDefault(); setDirection(rows[event.key]); }
+  });
+  let dragDepth = 0;
+  window.addEventListener('dragenter', event => {
+    event.preventDefault();
+    dragDepth++;
+    stage.classList.add('dragging');
+  });
+  window.addEventListener('dragover', event => {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy';
+  });
+  window.addEventListener('dragleave', () => {
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) stage.classList.remove('dragging');
+  });
+  window.addEventListener('drop', event => {
+    event.preventDefault();
+    dragDepth = 0;
+    stage.classList.remove('dragging');
+    load(event.dataTransfer?.files[0]);
+  });
+  window.addEventListener('resize', resize);
+  restoreGrid();
+  resize();
+</script>
+</html>

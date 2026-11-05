@@ -21,6 +21,13 @@
     section a:hover {
       outline: 2px dashed var(--front);
     }
+    .ai-tools h2 {
+      flex-basis: 100%;
+      margin: 8px 0 12px;
+      font-family: monospace;
+      font-size: 1.25rem;
+      font-weight: normal;
+    }
   </style>
 </head>
 <body>
@@ -92,7 +99,6 @@
     <a href="cal.html">China Holiday Calendar</a>
     <a href="minesweeper.html">Minesweeper</a>
     <a href="url-mask.html">URL Mask</a>
-    <a href="ansi-escape.html">ANSI Escape</a>
     <span id="$hidden" style="display: none">
       <a href="34to44.html">XP ↔ VX/VA Character Sprites</a>
       <a href="antd5to6.html">antd 5 → 6</a>
@@ -106,6 +112,11 @@
       <a href="svelte.html">Svelte</a>
       <a href="攻击范围.html">攻击范围</a>
     </span>
+  </section>
+  <section class="ai-tools" aria-labelledby="ai-tools-title">
+    <h2 id="ai-tools-title">AI made</h2>
+    <a href="ansi-escape.html">ANSI Escape</a>
+    <a href="walk.html">Walk Animation</a>
   </section>
   <script>
     if (location.search.includes('all=1')) {
